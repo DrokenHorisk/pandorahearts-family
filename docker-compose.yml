@@ -2,13 +2,13 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: pandorahearts
-      POSTGRES_USER: pandora
-      POSTGRES_PASSWORD: pandora
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pandora -d pandorahearts"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -21,10 +21,10 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      JWT_SECRET: "1907Mfe901036."
-      PASSWORD_SALT: "pandorahearts-salt-CHANGE-ME"
-      DROKEN_PASSWORD: "1907Mfe901036."
-      ADMIN_PASSWORD: "pandoraheartsfamilly"
+      JWT_SECRET: ${JWT_SECRET}
+      PASSWORD_SALT: ${PASSWORD_SALT}
+      DROKEN_PASSWORD: ${DROKEN_PASSWORD}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
   frontend:
     build: ./frontend

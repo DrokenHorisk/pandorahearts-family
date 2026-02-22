@@ -1,5 +1,6 @@
+// frontend/src/App.jsx
 import React from "react";
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { HashRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import HistoryDashboard from "./pages/HistoryDashboard";
 import PlayerDashboard from "./pages/PlayerDashboard";
@@ -24,6 +25,7 @@ function Shell() {
     location.pathname.startsWith("/history") ? "history" :
     location.pathname.startsWith("/admin") ? "admin" :
     location.pathname.startsWith("/player") ? "player" :
+    location.pathname.startsWith("/login") ? "login" :
     "snapshot";
 
   const user = getUser();
@@ -53,7 +55,10 @@ function Shell() {
                 {user.username} • {user.role}
               </span>
               <button
-                onClick={() => { clearAuth(); navigate("/login"); }}
+                onClick={() => {
+                  clearAuth();
+                  navigate("/login");
+                }}
                 className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 text-slate-300 hover:text-slate-100"
               >
                 Déconnexion
@@ -91,9 +96,9 @@ function Shell() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Shell />
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
