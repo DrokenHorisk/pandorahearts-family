@@ -1,0 +1,2 @@
+docker compose cp seed_pandorahearts.sql postgres:/tmp/seed_pandorahearts.sql
+docker compose exec -T postgres sh -lc 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -f /tmp/seed_pandorahearts.sql'

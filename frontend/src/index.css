@@ -1,0 +1,8 @@
+/* frontend/src/index.css */
+@import "tailwindcss";
+
+/* Force Tailwind à prendre la config au bon endroit */
+@config "../tailwind.config.js";
+
+/* Force le scan de tes fichiers React */
+@source "./**/*.{js,jsx,ts,tsx}";
