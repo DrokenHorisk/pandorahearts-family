@@ -1,6 +1,5 @@
 // frontend/src/api/import.js
-import { API_BASE } from "./index"; // si ton API_BASE est dans src/api/index.js
-// Si ton API_BASE est dans src/api.js, remplace par: import { API_BASE } from "../api";
+import { API_BASE } from "./index";
 
 export async function importFamilyFiles({ family, gmbrFile, gexpFile }) {
   const fd = new FormData();

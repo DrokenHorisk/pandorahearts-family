@@ -1,4 +1,4 @@
-// frontend/src/api/api.js
+// frontend/src/api.js
 export const API_BASE =
   (import.meta?.env?.VITE_API_BASE && import.meta.env.VITE_API_BASE) ||
-  "http://192.168.0.30:8000";
+  "https://api.pandorahearts-family.fr";
