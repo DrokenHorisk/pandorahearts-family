@@ -1,4 +1,4 @@
-#backend/Dockerfile
+# backend/Dockerfile
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -10,4 +10,5 @@ COPY api ./api
 COPY scripts ./scripts
 
 EXPOSE 8000
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+CMD ["sh", "-c", "python -u scripts/run_migrations.py && uvicorn api.main:app --host 0.0.0.0 --port 8000"]

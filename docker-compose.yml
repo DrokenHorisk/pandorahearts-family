@@ -14,7 +14,9 @@ services:
       retries: 30
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     depends_on:
@@ -25,9 +27,14 @@ services:
       PASSWORD_SALT: ${PASSWORD_SALT}
       DROKEN_PASSWORD: ${DROKEN_PASSWORD}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3001:80"
     depends_on:

@@ -4,15 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import desc, func, distinct
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import time
 from pydantic import BaseModel
-from fastapi import Body
 
 from .db import engine, get_db
-from .models import Base, Member, WeeklyPoints
+from .models import Base, Member, WeeklyPoints, Donation
 from .importer import import_files
 
 from .auth import authenticate_user, create_access_token, get_current_user, require_roles
@@ -21,7 +20,10 @@ app = FastAPI(title="PandoraHearts API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://pandorahearts-family.fr",
+        "http://localhost:5173",  # pratique en dev si besoin
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],  # important pour Authorization
@@ -49,7 +51,12 @@ def login(username: str = Form(...), password: str = Form(...)):
         raise HTTPException(status_code=401, detail="Bad credentials")
 
     token = create_access_token({"sub": user["username"], "role": user["role"]})
-    return {"access_token": token, "token_type": "bearer", "role": user["role"], "username": user["username"]}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": user["role"],
+        "username": user["username"],
+    }
 
 @app.get("/auth/me")
 def me(user=Depends(get_current_user)):
@@ -64,7 +71,7 @@ async def import_family(
     gexp: UploadFile = File(...),
     snapshot_date: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(require_roles("admin", "superadmin")),  # 🔒
+    _user=Depends(require_roles("admin", "superadmin")),
 ):
     gmbr_txt = (await gmbr.read()).decode("utf-8", errors="replace")
     gexp_txt = (await gexp.read()).decode("utf-8", errors="replace")
@@ -74,7 +81,61 @@ async def import_family(
         snap = datetime.strptime(snapshot_date, "%Y-%m-%d").date()
 
     import_files(db, gmbr_txt, gexp_txt, family, snapshot_date=snap)
-    return {"status": "imported", "family": family, "snapshot_date": (snap.isoformat() if snap else None)}
+    return {
+        "status": "imported",
+        "family": family,
+        "snapshot_date": (snap.isoformat() if snap else None),
+    }
+
+# ---------------- Helpers ----------------
+
+ROLE_DEFAULT = "Principale"
+
+def normalize_role(role: Optional[str]) -> str:
+    if role in ("Principale", "Secondaire", "Mule"):
+        return role
+    return ROLE_DEFAULT
+
+STATUS_DEFAULT = None
+
+def normalize_status(status: Optional[str]) -> Optional[str]:
+    if status in ("actif", "absent", "arret_sans_nouvelle"):
+        return status
+    return STATUS_DEFAULT
+
+def require_usernames(*allowed: str):
+    allowed_set = {a.lower() for a in allowed}
+
+    def _dep(user=Depends(get_current_user)):
+        username = (user.get("username") or user.get("sub") or "").lower()
+        if username not in allowed_set:
+            raise HTTPException(status_code=403, detail="Not allowed")
+        return user
+
+    return _dep
+
+def pick_monthly_ref_4w_sunday(dates: list[date]) -> Optional[date]:
+    """
+    Mensuel = 4 semaines (28 jours).
+    On essaie de prendre une date de snapshot <= (last_date - 28 jours)
+    ET de préférence un dimanche.
+    Fallback: la dernière date <= target, même si pas dimanche.
+    """
+    if not dates:
+        return None
+
+    last_date = dates[-1]
+    target = last_date - timedelta(days=28)
+
+    candidates = [d for d in dates if d <= target]
+    if not candidates:
+        return None
+
+    sundays = [d for d in candidates if d.weekday() == 6]
+    if sundays:
+        return sundays[-1]
+
+    return candidates[-1]
 
 # ---------------- PUBLIC API ----------------
 
@@ -146,7 +207,16 @@ def history(
     )
     dates = [d[0] for d in rows_dates]
 
+    all_dates_rows = (
+        db.query(distinct(WeeklyPoints.snapshot_date))
+        .filter(WeeklyPoints.family == family)
+        .order_by(WeeklyPoints.snapshot_date)
+        .all()
+    )
+    all_dates = [d[0] for d in all_dates_rows]
+
     members = db.query(Member).filter(Member.family == family).all()
+    nickname_by_id = {int(m.player_id): m.nickname for m in members}
 
     rows = (
         db.query(
@@ -156,67 +226,128 @@ def history(
         )
         .filter(
             WeeklyPoints.family == family,
-            WeeklyPoints.snapshot_date.between(from_date, to_date),
+            WeeklyPoints.snapshot_date.in_(all_dates),
         )
         .all()
     )
 
     points_map = defaultdict(dict)
     for pid, snap, pts in rows:
-        points_map[pid][snap] = int(pts)
+        points_map[int(pid)][snap] = int(pts)
 
     last_date = dates[-1] if dates else None
-    prev_date = dates[-2] if len(dates) >= 2 else None
 
-    monthly_ref = None
+    prev_global_date = None
+    if last_date and last_date in all_dates:
+        idx = all_dates.index(last_date)
+        if idx > 0:
+            prev_global_date = all_dates[idx - 1]
+
+    monthly_ref_global = None
     if last_date:
-        target = last_date - timedelta(days=30)
-        candidates = [d for d in dates if d <= target]
+        target = last_date - timedelta(days=28)
+        candidates = [d for d in all_dates if d <= target]
         if candidates:
-            monthly_ref = candidates[-1]
+            monthly_ref_global = candidates[-1]
 
     result = []
 
     for m in members:
-        player_points = {}
-        for d in dates:
-            player_points[d.isoformat()] = int(points_map.get(m.player_id, {}).get(d, 0))
+        pid = int(m.player_id)
+        role = normalize_role(getattr(m, "role", None))
+        status = normalize_status(getattr(m, "status", None))
 
-        last_val = int(points_map.get(m.player_id, {}).get(last_date, 0)) if last_date else 0
+        player_points = {
+            d.isoformat(): int(points_map.get(pid, {}).get(d, 0)) for d in dates
+        }
+
+        last_val = int(points_map.get(pid, {}).get(last_date, 0)) if last_date else 0
 
         period_diff = None
         if dates:
-            first_val = int(points_map.get(m.player_id, {}).get(dates[0], 0))
+            first_val = int(points_map.get(pid, {}).get(dates[0], 0))
             period_diff = last_val - first_val
 
         weekly_diff = None
-        if last_date and prev_date:
-            weekly_diff = int(points_map.get(m.player_id, {}).get(last_date, 0)) - int(
-                points_map.get(m.player_id, {}).get(prev_date, 0)
+        if last_date and prev_global_date:
+            weekly_diff = (
+                int(points_map.get(pid, {}).get(last_date, 0))
+                - int(points_map.get(pid, {}).get(prev_global_date, 0))
             )
 
         monthly_diff = None
-        if last_date and monthly_ref:
-            monthly_diff = int(points_map.get(m.player_id, {}).get(last_date, 0)) - int(
-                points_map.get(m.player_id, {}).get(monthly_ref, 0)
+        if last_date and monthly_ref_global:
+            monthly_diff = (
+                int(points_map.get(pid, {}).get(last_date, 0))
+                - int(points_map.get(pid, {}).get(monthly_ref_global, 0))
             )
+
+        main_nickname = None
+        if m.main_player_id:
+            main_nickname = nickname_by_id.get(int(m.main_player_id))
 
         result.append(
             {
-                "player_id": m.player_id,
+                "player_id": pid,
                 "nickname": m.nickname,
                 "level": m.level,
                 "class_id": m.class_id,
+                "role": role,
+                "status": status,
+                "main_player_id": int(m.main_player_id) if m.main_player_id else None,
+                "main_nickname": main_nickname,
                 "points": player_points,
                 "last_value": last_val,
                 "period_diff": period_diff,
                 "weekly_diff": weekly_diff,
                 "monthly_diff": monthly_diff,
-                "monthly_ref": monthly_ref.isoformat() if monthly_ref else None,
+                "monthly_ref": monthly_ref_global.isoformat() if monthly_ref_global else None,
             }
         )
 
-    return {"dates": [d.isoformat() for d in dates], "players": result}
+    return {
+        "dates": [d.isoformat() for d in dates],
+        "players": result,
+    }
+
+@app.get("/family/{family}/donations")
+def get_donations(
+    family: str,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "superadmin")),
+):
+    rows = db.query(Donation).filter(Donation.family == family).all()
+    return {
+        str(d.player_id): {"gave": bool(d.gave), "amount": int(d.amount)}
+        for d in rows
+    }
+
+@app.put("/family/{family}/donations/{player_id}")
+def upsert_donation(
+    family: str,
+    player_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "superadmin")),
+):
+    gave = bool(payload.get("gave", False))
+    amount = int(payload.get("amount", 0))
+
+    row = (
+        db.query(Donation)
+        .filter(Donation.family == family, Donation.player_id == player_id)
+        .first()
+    )
+
+    if not row:
+        row = Donation(family=family, player_id=player_id, gave=gave, amount=amount)
+        db.add(row)
+    else:
+        row.gave = gave
+        row.amount = amount
+
+    db.commit()
+    return {"ok": True}
 
 @app.get("/family/{family}/player/by-nickname/{nickname}")
 def get_player_by_nickname(
@@ -268,12 +399,7 @@ def get_player_by_nickname(
     last_date = dates[-1] if dates else None
     prev_date = dates[-2] if len(dates) >= 2 else None
 
-    monthly_ref = None
-    if last_date:
-        target = last_date - timedelta(days=30)
-        candidates = [d for d in dates if d <= target]
-        if candidates:
-            monthly_ref = candidates[-1]
+    monthly_ref = pick_monthly_ref_4w_sunday(dates)
 
     last_val = int(points_map.get(last_date, 0)) if last_date else 0
     first_val = int(points_map.get(dates[0], 0)) if dates else 0
@@ -290,12 +416,54 @@ def get_player_by_nickname(
         else None
     )
 
+    role = normalize_role(getattr(player, "role", None))
+    status = normalize_status(getattr(player, "status", None))
+
+    main_nickname = None
+    if player.main_player_id:
+        main_obj = (
+            db.query(Member)
+            .filter(Member.family == family, Member.player_id == player.main_player_id)
+            .first()
+        )
+        main_nickname = main_obj.nickname if main_obj else None
+
+    linked = []
+    if role == "Principale":
+        linked_rows = (
+            db.query(
+                Member.player_id,
+                Member.nickname,
+                Member.role,
+                Member.level,
+                Member.class_id,
+            )
+            .filter(Member.family == family, Member.main_player_id == player.player_id)
+            .order_by(func.lower(Member.nickname))
+            .all()
+        )
+        linked = [
+            {
+                "player_id": int(r[0]),
+                "nickname": r[1],
+                "role": normalize_role(r[2]),
+                "level": r[3],
+                "class_id": r[4],
+            }
+            for r in linked_rows
+        ]
+
     return {
         "player": {
-            "player_id": player.player_id,
+            "player_id": int(player.player_id),
             "nickname": player.nickname,
             "level": player.level,
             "class_id": player.class_id,
+            "role": role,
+            "status": status,
+            "main_player_id": int(player.main_player_id) if player.main_player_id else None,
+            "main_nickname": main_nickname,
+            "linked_members": linked,
         },
         "dates": [d.isoformat() for d in dates],
         "series": series,
@@ -307,7 +475,9 @@ def get_player_by_nickname(
             "monthly_ref": monthly_ref.isoformat() if monthly_ref else None,
         },
     }
-    
+
+# ---------------- ADMIN API ----------------
+
 class NicknameUpdate(BaseModel):
     nickname: str
 
@@ -317,7 +487,7 @@ def update_nickname(
     player_id: int,
     payload: NicknameUpdate,
     db: Session = Depends(get_db),
-    _user=Depends(require_roles("admin", "superadmin")),  # 🔒 Admin/Droken only
+    _user=Depends(require_roles("admin", "superadmin")),
 ):
     new_nick = (payload.nickname or "").strip()
 
@@ -327,7 +497,6 @@ def update_nickname(
     if len(new_nick) > 64:
         raise HTTPException(status_code=400, detail="Nickname too long (max 64)")
 
-    # joueur existe ?
     m = (
         db.query(Member)
         .filter(Member.family == family, Member.player_id == player_id)
@@ -336,7 +505,6 @@ def update_nickname(
     if not m:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # éviter doublon pseudo dans la famille
     exists = (
         db.query(Member)
         .filter(
@@ -354,9 +522,215 @@ def update_nickname(
     db.refresh(m)
 
     return {
-        "player_id": m.player_id,
+        "player_id": int(m.player_id),
         "nickname": m.nickname,
         "level": m.level,
         "class_id": m.class_id,
         "family": m.family,
+    }
+
+class PointsUpdate(BaseModel):
+    snapshot_date: date
+    value: int
+
+@app.patch("/family/{family}/players/{player_id}/points")
+def update_player_points(
+    family: str,
+    player_id: int,
+    payload: PointsUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "superadmin")),
+):
+    if payload.value < 0:
+        raise HTTPException(status_code=400, detail="value must be >= 0")
+
+    member = (
+        db.query(Member)
+        .filter(Member.family == family, Member.player_id == player_id)
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    row = (
+        db.query(WeeklyPoints)
+        .filter(
+            WeeklyPoints.family == family,
+            WeeklyPoints.player_id == player_id,
+            WeeklyPoints.snapshot_date == payload.snapshot_date,
+        )
+        .first()
+    )
+
+    if row:
+        row.gexp_points = int(payload.value)
+        db.commit()
+        db.refresh(row)
+        return {
+            "status": "updated",
+            "family": family,
+            "player_id": int(player_id),
+            "snapshot_date": row.snapshot_date.isoformat(),
+            "gexp_points": int(row.gexp_points),
+        }
+
+    new_row = WeeklyPoints(
+        family=family,
+        player_id=player_id,
+        snapshot_date=payload.snapshot_date,
+        gexp_points=int(payload.value),
+        imported_at=datetime.utcnow(),
+    )
+    db.add(new_row)
+    db.commit()
+    db.refresh(new_row)
+
+    return {
+        "status": "created",
+        "family": family,
+        "player_id": int(player_id),
+        "snapshot_date": new_row.snapshot_date.isoformat(),
+        "gexp_points": int(new_row.gexp_points),
+    }
+
+@app.delete("/family/{family}/players/{player_id}")
+def delete_player(
+    family: str,
+    player_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "superadmin")),
+):
+    member = (
+        db.query(Member)
+        .filter(Member.family == family, Member.player_id == player_id)
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    linked = (
+        db.query(Member)
+        .filter(Member.family == family, Member.main_player_id == player_id)
+        .all()
+    )
+    for lm in linked:
+        lm.main_player_id = None
+        lm.role = "Principale"
+
+    db.query(WeeklyPoints).filter(
+        WeeklyPoints.family == family,
+        WeeklyPoints.player_id == player_id,
+    ).delete(synchronize_session=False)
+
+    db.query(Donation).filter(
+        Donation.family == family,
+        Donation.player_id == player_id,
+    ).delete(synchronize_session=False)
+
+    db.delete(member)
+    db.commit()
+
+    return {"status": "deleted", "family": family, "player_id": int(player_id)}
+
+@app.get("/family/{family}/mains")
+def list_mains(family: str, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Member.player_id, Member.nickname)
+        .filter(Member.family == family, Member.role == "Principale")
+        .order_by(func.lower(Member.nickname))
+        .all()
+    )
+    return [{"player_id": int(r[0]), "nickname": r[1]} for r in rows]
+
+class RoleLinkUpdate(BaseModel):
+    role: Literal["Principale", "Secondaire", "Mule"]
+    main_player_id: Optional[int] = None
+
+@app.patch("/family/{family}/player/{player_id}/role-link")
+def update_role_and_link(
+    family: str,
+    player_id: int,
+    payload: RoleLinkUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "superadmin")),
+):
+    role = payload.role
+    main_id = payload.main_player_id
+
+    member = (
+        db.query(Member)
+        .filter(Member.family == family, Member.player_id == player_id)
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    if role == "Principale":
+        if main_id is not None:
+            raise HTTPException(status_code=400, detail="Principale ne peut pas avoir main_player_id")
+        member.role = "Principale"
+        member.main_player_id = None
+        db.commit()
+        db.refresh(member)
+        return {"player_id": int(member.player_id), "role": member.role, "main_player_id": None}
+
+    if main_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Secondaire/Mule doit être lié à un principal (main_player_id obligatoire)",
+        )
+
+    if int(main_id) == int(player_id):
+        raise HTTPException(status_code=400, detail="Impossible de se lier à soi-même")
+
+    main_member = (
+        db.query(Member)
+        .filter(Member.family == family, Member.player_id == int(main_id))
+        .first()
+    )
+    if not main_member:
+        raise HTTPException(status_code=404, detail="Principal introuvable dans cette family")
+
+    if normalize_role(getattr(main_member, "role", None)) != "Principale":
+        raise HTTPException(status_code=409, detail="main_player_id doit pointer vers un membre role=Principale")
+
+    member.role = role
+    member.main_player_id = int(main_id)
+
+    db.commit()
+    db.refresh(member)
+
+    return {
+        "player_id": int(member.player_id),
+        "role": member.role,
+        "main_player_id": int(member.main_player_id) if member.main_player_id else None,
+    }
+
+class StatusUpdate(BaseModel):
+    status: Optional[Literal["actif", "absent", "arret_sans_nouvelle"]] = None
+
+@app.patch("/family/{family}/player/{player_id}/status")
+def update_status(
+    family: str,
+    player_id: int,
+    payload: StatusUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "superadmin")),
+):
+    member = (
+        db.query(Member)
+        .filter(Member.family == family, Member.player_id == player_id)
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    member.status = payload.status
+
+    db.commit()
+    db.refresh(member)
+
+    return {
+        "player_id": int(member.player_id),
+        "status": normalize_status(getattr(member, "status", None)),
     }

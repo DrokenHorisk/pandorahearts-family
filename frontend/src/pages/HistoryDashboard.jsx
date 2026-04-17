@@ -1,8 +1,13 @@
 // frontend/src/pages/HistoryDashboard.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { API_BASE } from "../api";
-import { CLASS_NAMES, CLASS_ICONS } from "../constants/classes";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { API_BASE } from "../api";
+
+const ROLE_BADGE = {
+  Principale: "Principale",
+  Secondaire: "Secondaire",
+  Mule: "Mule",
+};
 
 export default function HistoryDashboard() {
   const family = "PandoraHearts";
@@ -13,338 +18,525 @@ export default function HistoryDashboard() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
 
-  // ✅ Filters like Dashboard
-  const [query, setQuery] = useState("");
-  const [classFilter, setClassFilter] = useState("all");
+  // ✅ Search
+  const [q, setQ] = useState("");
 
-  // Load available snapshot dates
+  // ✅ Sort state
+  const [sort, setSort] = useState({ key: "period_diff", dir: "desc" });
+
+  // Largeurs fixes pour sticky columns
+  const COL_PLAYER_W = 240;
+  const COL_ROLE_W = 160;
+
+  // Ref scroll principal
+  const scrollRef = useRef(null);
+
+  // ✅ Top horizontal scrollbar refs + width tracking
+  const topScrollRef = useRef(null);
+  const tableRef = useRef(null);
+  const [topScrollWidth, setTopScrollWidth] = useState(0);
+  const syncingRef = useRef(false);
+
   useEffect(() => {
     fetch(`${API_BASE}/family/${family}/snapshots`)
       .then((r) => r.json())
       .then((dates) => {
-        if (!Array.isArray(dates)) {
-          console.error("Snapshots API returned:", dates);
-          setSnapshots([]);
-          return;
-        }
+        if (!Array.isArray(dates)) return;
         setSnapshots(dates);
-
-        if (dates.length >= 1) {
+        if (dates.length) {
           setFromDate(dates[0]);
           setToDate(dates[dates.length - 1]);
         }
       })
-      .catch((e) => {
-        console.error("Snapshots fetch error:", e);
-        setSnapshots([]);
-      });
+      .catch(() => setSnapshots([]));
   }, []);
 
-  // Load history for date range
   useEffect(() => {
     if (!fromDate || !toDate) return;
 
     setLoading(true);
+    setErr("");
     fetch(
       `${API_BASE}/family/${family}/history?from_date=${fromDate}&to_date=${toDate}`
     )
-      .then((r) => r.json())
-      .then((json) => {
-        if (!json || !Array.isArray(json.players) || !Array.isArray(json.dates)) {
-          console.error("History API error:", json);
-          setData(null);
-          return;
-        }
-        setData(json);
+      .then(async (r) => {
+        if (!r.ok)
+          throw new Error(
+            (await r.text().catch(() => "")) || `HTTP ${r.status}`
+          );
+        return r.json();
       })
+      .then((json) => setData(json))
       .catch((e) => {
-        console.error("History fetch error:", e);
         setData(null);
+        setErr(e?.message || String(e));
       })
       .finally(() => setLoading(false));
   }, [fromDate, toDate]);
 
-  // ✅ filtered players (pseudo + classe)
-  const filteredPlayers = useMemo(() => {
-    if (!data?.players) return [];
-    const q = query.trim().toLowerCase();
+  const dates = data?.dates || [];
+  const players = data?.players || [];
 
-    return data.players
-      .filter((p) => {
-        const okQ = !q || (p.nickname || "").toLowerCase().includes(q);
-        const okC = classFilter === "all" || String(p.class_id) === classFilter;
-        return okQ && okC;
-      })
-      // tri par "final" décroissant
-      .sort((a, b) => Number(b.last_value || 0) - Number(a.last_value || 0));
-  }, [data, query, classFilter]);
+  // ✅ Helpers sort
+  const toggleSort = (key) => {
+    setSort((prev) => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
+      }
+      const isText = key === "nickname" || key === "role";
+      return { key, dir: isText ? "asc" : "desc" };
+    });
+  };
+
+  const sortIndicator = (key) => {
+    if (sort.key !== key) return null;
+    return sort.dir === "asc" ? " ▲" : " ▼";
+  };
+
+  // ✅ Filter + Sort
+  const visiblePlayers = useMemo(() => {
+    const arr = Array.isArray(players) ? [...players] : [];
+
+    const needle = q.trim().toLowerCase();
+    const filtered = !needle
+      ? arr
+      : arr.filter((p) => {
+          const role = String(p.role || "Principale");
+          const mainNick = String(p.main_nickname || "");
+          const nick = String(p.nickname || "");
+          return (
+            nick.toLowerCase().includes(needle) ||
+            role.toLowerCase().includes(needle) ||
+            mainNick.toLowerCase().includes(needle)
+          );
+        });
+
+    const dirMul = sort.dir === "asc" ? 1 : -1;
+
+    const getVal = (p) => {
+      if (sort.key === "nickname") return String(p.nickname || "");
+      if (sort.key === "role") return String(p.role || "Principale");
+      if (sort.key === "period_diff") return Number(p.period_diff ?? 0);
+      if (sort.key === "weekly_diff") return Number(p.weekly_diff ?? 0);
+      if (sort.key === "monthly_diff") return Number(p.monthly_diff ?? 0);
+
+      if (sort.key.startsWith("date:")) {
+        const d = sort.key.slice("date:".length);
+        return Number(p.points?.[d] ?? 0);
+      }
+
+      return Number(p.period_diff ?? 0);
+    };
+
+    filtered.sort((a, b) => {
+      const va = getVal(a);
+      const vb = getVal(b);
+
+      if (typeof va === "string" || typeof vb === "string") {
+        const sa = String(va);
+        const sb = String(vb);
+        return sa.localeCompare(sb, "fr", { sensitivity: "base" }) * dirMul;
+      }
+
+      return (va - vb) * dirMul;
+    });
+
+    return filtered;
+  }, [players, q, sort]);
+
+  const resetControls = () => {
+    setQ("");
+    setSort({ key: "period_diff", dir: "desc" });
+  };
+
+  // ✅ Sync top scrollbar <-> main scrollbar
+  const onMainScroll = (e) => {
+    const el = e.currentTarget;
+    const topEl = topScrollRef.current;
+    if (!topEl) return;
+
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    topEl.scrollLeft = el.scrollLeft;
+    requestAnimationFrame(() => {
+      syncingRef.current = false;
+    });
+  };
+
+  const onTopScroll = (e) => {
+    const el = e.currentTarget;
+    const mainEl = scrollRef.current;
+    if (!mainEl) return;
+
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    mainEl.scrollLeft = el.scrollLeft;
+    requestAnimationFrame(() => {
+      syncingRef.current = false;
+    });
+  };
+
+  // ✅ Track table width for the top scrollbar (so it matches horizontal content)
+  useEffect(() => {
+    if (!tableRef.current) return;
+
+    const update = () => {
+      const w = tableRef.current?.scrollWidth || 0;
+      setTopScrollWidth(w);
+    };
+
+    update();
+
+    const ro = new ResizeObserver(() => update());
+    ro.observe(tableRef.current);
+
+    // in case fonts load / layout changes
+    const t = setTimeout(update, 0);
+
+    return () => {
+      clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [loading, data, dates.length, visiblePlayers.length]);
+
+  // ✅ Auto-scroll à droite quand les données arrivent / changent
+  useEffect(() => {
+    if (loading) return;
+    if (!data) return;
+
+    const mainEl = scrollRef.current;
+    if (!mainEl) return;
+
+    const raf = requestAnimationFrame(() => {
+      const right = Math.max(0, mainEl.scrollWidth - mainEl.clientWidth);
+      mainEl.scrollLeft = right;
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [loading, data, dates.length, visiblePlayers.length]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      {/* Glow orbs */}
       <div className="pointer-events-none fixed -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-purple-600/20 blur-3xl" />
       <div className="pointer-events-none fixed -bottom-40 -left-40 h-[520px] w-[520px] rounded-full bg-cyan-500/10 blur-3xl" />
 
-      <div className="max-w-7xl mx-auto px-6 py-10 space-y-10">
-        {/* Header */}
-        <header className="rounded-2xl border border-slate-700/60 bg-slate-950/40 p-6 relative overflow-hidden">
-          <div className="pointer-events-none absolute inset-0 opacity-30">
-            <div className="absolute -top-24 left-10 h-72 w-72 rounded-full bg-purple-500/20 blur-3xl" />
-            <div className="absolute -bottom-24 right-10 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
-          </div>
-
-          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+      <div className="max-w-7xl mx-auto px-6 py-10 space-y-6">
+        <header className="rounded-2xl border border-slate-700/60 bg-slate-950 p-6">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1 text-xs text-slate-300">
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs text-slate-300">
                 <span className="text-purple-300">✦</span>
-                Nostale • Historique Famille
+                Historique
               </div>
-
-              <h1 className="mt-3 text-4xl md:text-5xl font-extrabold tracking-tight">
-                <span className="text-slate-100">Pandora</span>
-                <span className="text-purple-400">Hearts</span>
+              <h1 className="mt-3 text-2xl md:text-3xl font-extrabold tracking-tight">
+                PandoraHearts • Historique
               </h1>
-
-              <p className="mt-2 text-slate-400 max-w-2xl">
-                Les valeurs importées sont des <span className="text-slate-200">totaux cumulés</span>.
-                On affiche donc la valeur finale et les variations (Δ) sur la période.
-              </p>
-            </div>
-          </div>
-        </header>
-
-        {/* Panel */}
-        <section className="rounded-2xl border border-slate-700/60 bg-slate-950/35 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-800 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-slate-100">Historique</h2>
-              <p className="text-sm text-slate-400">
-                Filtre une période, recherche un pseudo, filtre une classe
-              </p>
+              <p className="mt-2 text-slate-400">Recap</p>
             </div>
 
-            {/* ✅ Like dashboard: search + class */}
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center w-full lg:w-auto">
-              <input
-                className="w-full sm:w-64 rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500/40"
-                placeholder="Rechercher un pseudo…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+              <div className="text-xs uppercase text-slate-500 tracking-wider">
+                Période
+              </div>
+              <div className="mt-3 flex flex-wrap gap-3 items-end">
+                <div>
+                  <label className="block text-xs text-slate-400">Du</label>
+                  <select
+                    className="mt-1 rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500/40"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  >
+                    {snapshots.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <select
-                className="rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500/40"
-                value={classFilter}
-                onChange={(e) => setClassFilter(e.target.value)}
-              >
-                <option value="all">Toutes classes</option>
-                <option value="1">{CLASS_NAMES?.[1] || "Classe 1"}</option>
-                <option value="2">{CLASS_NAMES?.[2] || "Classe 2"}</option>
-                <option value="3">{CLASS_NAMES?.[3] || "Classe 3"}</option>
-                <option value="4">{CLASS_NAMES?.[4] || "Classe 4"}</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="p-6 space-y-6">
-            {/* Dates */}
-            <div className="flex flex-wrap gap-3 items-end">
-              <div>
-                <label className="block text-xs text-slate-400">Du</label>
-                <select
-                  className="mt-1 rounded-xl bg-slate-950/60 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500/40"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  disabled={snapshots.length === 0}
-                >
-                  {snapshots.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <label className="block text-xs text-slate-400">Au</label>
+                  <select
+                    className="mt-1 rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500/40"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                  >
+                    {snapshots.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs text-slate-400">Au</label>
-                <select
-                  className="mt-1 rounded-xl bg-slate-950/60 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500/40"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  disabled={snapshots.length === 0}
-                >
-                  {snapshots.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {snapshots.length === 0 ? (
-                <div className="text-sm text-slate-500">Aucun date disponible</div>
+              {data?.players?.[0]?.monthly_ref ? (
+                <div className="mt-2 text-xs text-slate-500">
+                  Mensuel = ref{" "}
+                  <span className="text-slate-300">
+                    {data.players[0].monthly_ref}
+                  </span>{" "}
+                  (4 semaines, dimanche si possible)
+                </div>
               ) : null}
             </div>
+          </div>
 
-            {/* Table */}
-            {loading ? (
-              <div className="text-slate-400">Chargement…</div>
-            ) : !data ? (
-              <div className="text-slate-400">
-                Pas de données pour cette période (ou erreur API). Vérifie la console navigateur.
+          {/* ✅ Search bar + actions */}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[240px]">
+              <label className="block text-xs text-slate-400">Recherche</label>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Pseudo, rôle, principal…"
+                className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500/40"
+              />
+              <div className="mt-1 text-xs text-slate-500">
+                {visiblePlayers.length} joueur(s) affiché(s)
               </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={resetControls}
+              className="h-[42px] mt-[18px] rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm text-slate-200 hover:bg-slate-950"
+              title="Réinitialiser recherche + tri"
+            >
+              Reset
+            </button>
+          </div>
+
+          {err ? <div className="mt-4 text-sm text-red-300">❌ {err}</div> : null}
+        </header>
+
+        <section className="rounded-2xl border border-slate-700/60 bg-slate-950 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-slate-100">Tableau</h2>
+            <p className="text-sm text-slate-400">Recap</p>
+          </div>
+
+          <div className="p-0">
+            {loading ? (
+              <div className="p-6 text-slate-400">Chargement…</div>
+            ) : !data ? (
+              <div className="p-6 text-slate-400">Pas de données.</div>
             ) : (
-              <HistoryTable dates={data.dates} players={filteredPlayers} />
+              <>
+                {/* Main table scroller */}
+                <div
+                  ref={scrollRef}
+                  onScroll={onMainScroll}
+                  className="relative overflow-auto max-h-[72vh]"
+                >
+                  <table
+                    ref={tableRef}
+                    className="min-w-max w-full border-separate border-spacing-0"
+                  >
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wider text-slate-300">
+                        <th
+                          className="sticky top-0 left-0 z-30 bg-slate-950 border-b border-slate-800 px-4 py-3 cursor-pointer select-none hover:text-slate-100"
+                          style={{ width: COL_PLAYER_W, minWidth: COL_PLAYER_W }}
+                          onClick={() => toggleSort("nickname")}
+                          title="Trier"
+                        >
+                          Joueur{sortIndicator("nickname")}
+                        </th>
+
+                        <th
+                          className="sticky top-0 z-30 bg-slate-950 border-b border-slate-800 px-4 py-3 cursor-pointer select-none hover:text-slate-100"
+                          style={{
+                            left: COL_PLAYER_W,
+                            width: COL_ROLE_W,
+                            minWidth: COL_ROLE_W,
+                            position: "sticky",
+                          }}
+                          onClick={() => toggleSort("role")}
+                          title="Trier"
+                        >
+                          Rôle{sortIndicator("role")}
+                        </th>
+
+                        {dates.map((d) => (
+                          <th
+                            key={d}
+                            className="sticky top-0 z-20 bg-slate-950 border-b border-slate-800 px-4 py-3 text-right font-mono cursor-pointer select-none hover:text-slate-100"
+                            onClick={() => toggleSort(`date:${d}`)}
+                            title="Trier"
+                          >
+                            {d}
+                            {sortIndicator(`date:${d}`)}
+                          </th>
+                        ))}
+
+                        <th
+                          className="sticky top-0 z-20 bg-slate-950 border-b border-slate-800 px-4 py-3 text-right cursor-pointer select-none hover:text-slate-100"
+                          onClick={() => toggleSort("period_diff")}
+                          title="Trier"
+                        >
+                          Δ Période{sortIndicator("period_diff")}
+                        </th>
+                        <th
+                          className="sticky top-0 z-20 bg-slate-950 border-b border-slate-800 px-4 py-3 text-right cursor-pointer select-none hover:text-slate-100"
+                          onClick={() => toggleSort("weekly_diff")}
+                          title="Trier"
+                        >
+                          Δ Hebdo{sortIndicator("weekly_diff")}
+                        </th>
+                        <th
+                          className="sticky top-0 z-20 bg-slate-950 border-b border-slate-800 px-4 py-3 text-right cursor-pointer select-none hover:text-slate-100"
+                          onClick={() => toggleSort("monthly_diff")}
+                          title="Trier"
+                        >
+                          Δ Mensuel (4 semaines){sortIndicator("monthly_diff")}
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {visiblePlayers.map((p) => {
+                        const role = p.role || "Principale";
+                        const mainNick = p.main_nickname || null;
+
+                        return (
+                          <tr
+                            key={p.player_id}
+                            className="border-b border-slate-900/60"
+                          >
+                            <td
+                              className="sticky left-0 z-10 bg-slate-950 border-b border-slate-900/60 px-4 py-3"
+                              style={{
+                                width: COL_PLAYER_W,
+                                minWidth: COL_PLAYER_W,
+                              }}
+                            >
+                              <Link
+                                to={`/player/${encodeURIComponent(p.nickname)}`}
+                                className="inline-flex items-center gap-2 font-semibold text-slate-100 hover:text-purple-300 hover:underline"
+                              >
+                                <StatusDot status={p.status} />
+                                {p.nickname}
+                              </Link>
+                            </td>
+
+                            <td
+                              className="z-10 bg-slate-950 border-b border-slate-900/60 px-4 py-3"
+                              style={{
+                                left: COL_PLAYER_W,
+                                width: COL_ROLE_W,
+                                minWidth: COL_ROLE_W,
+                                position: "sticky",
+                              }}
+                            >
+                              <RolePill role={role} />
+
+                              {(role === "Secondaire" || role === "Mule") &&
+                              mainNick ? (
+                                <div className="mt-1 text-xs text-slate-500">
+                                  →{" "}
+                                  <Link
+                                    to={`/player/${encodeURIComponent(mainNick)}`}
+                                    className="hover:text-purple-300 hover:underline"
+                                    title="Voir le principal"
+                                  >
+                                    {mainNick}
+                                  </Link>
+                                </div>
+                              ) : null}
+                            </td>
+
+                            {dates.map((d) => (
+                              <td
+                                key={`${p.player_id}-${d}`}
+                                className="border-b border-slate-900/60 px-4 py-3 text-right font-mono"
+                              >
+                                {(Number(p.points?.[d] || 0)).toLocaleString()}
+                              </td>
+                            ))}
+
+                            <td className="border-b border-slate-900/60 px-4 py-3 text-right font-mono">
+                              <DiffValue v={p.period_diff} />
+                            </td>
+
+                            <td className="border-b border-slate-900/60 px-4 py-3 text-right font-mono">
+                              <DiffValue v={p.weekly_diff} />
+                            </td>
+
+                            <td className="border-b border-slate-900/60 px-4 py-3 text-right font-mono">
+                              <DiffValue v={p.monthly_diff} />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </section>
-
-        <footer className="text-center text-xs text-slate-500">
-          Thème “fantasy” inspiré de l’univers Nostale • Version dev
-        </footer>
       </div>
     </div>
   );
 }
 
-/* ---------------------------------------------------------------- */
+/* ---------------- UI helpers ---------------- */
 
-function HistoryTable({ dates, players }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full border-separate border-spacing-y-2">
-        <thead>
-          <tr className="text-left text-xs uppercase tracking-wider text-slate-400">
-            <th
-                className="
-                    sticky left-0 z-30
-                    bg-slate-950
-                    px-3
-                "
-                >
-                Joueur
-                </th>
-            <th className="px-3">Classe</th>
-            <th className="px-3 text-center">Niveau</th>
+function RolePill({ role }) {
+  const shown = ROLE_BADGE[role] || role || "Principale";
 
-            {dates.map((d) => (
-              <th key={d} className="px-3 text-right">
-                {d}
-              </th>
-            ))}
+  const base =
+    "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
+  let cls = "border-slate-700 bg-slate-950 text-slate-200";
 
-            <th className="px-3 text-right">Final</th>
-            <th className="px-3 text-right">Δ Période</th>
-            <th className="px-3 text-right">Δ Hebdo</th>
-            <th className="px-3 text-right">Δ Mensuel</th>
-          </tr>
-        </thead>
+  if (shown === "Principale")
+    cls = "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
+  if (shown === "Secondaire")
+    cls = "border-cyan-400/30 bg-cyan-400/10 text-cyan-200";
+  if (shown === "Mule")
+    cls = "border-purple-400/30 bg-purple-400/10 text-purple-200";
 
-        <tbody>
-          {players.map((p, i) => (
-            <tr
-              key={`${p.player_id}-${i}`}
-              className="group rounded-xl bg-slate-950/40 border border-slate-800"
-            >
-              <td
-                className="
-                    sticky left-0 z-20
-                    bg-slate-950/95 backdrop-blur
-                    px-3 py-3 min-w-[180px]
-                    border-r border-slate-800
-                "
-                >
-                <Link
-                    to={`/player/${encodeURIComponent(p.nickname)}`}
-                    className="font-semibold text-slate-100 hover:text-purple-300 transition"
-                >
-                    {p.nickname}
-                </Link>
-                </td>
-
-              <td className="px-3 py-3">
-                <ClassCell classId={p.class_id} />
-              </td>
-
-              <td className="px-3 py-3 text-center">
-                <span className="text-sm text-slate-200 font-semibold">{p.level}</span>
-              </td>
-
-              {dates.map((d) => (
-                <td key={d} className="px-3 py-3 text-right">
-                  <span className="text-sm font-mono font-bold text-slate-100">
-                    {Number(p.points?.[d] ?? 0).toLocaleString()}
-                  </span>
-                </td>
-              ))}
-
-              <td className="px-3 py-3 text-right">
-                <span className="text-sm font-mono font-bold text-slate-100">
-                  {Number(p.last_value ?? 0).toLocaleString()}
-                </span>
-              </td>
-
-              <DiffCell value={p.period_diff} />
-              <DiffCell value={p.weekly_diff} />
-              <DiffCell
-                value={p.monthly_diff}
-                title={p.monthly_ref ? `Réf: ${p.monthly_ref}` : undefined}
-              />
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <span className={`${base} ${cls}`}>{shown}</span>;
 }
 
-function ClassCell({ classId }) {
-  const name = CLASS_NAMES?.[classId] || `Classe ${classId}`;
-  const iconSrc = CLASS_ICONS?.[classId];
+function DiffValue({ v }) {
+  if (v === null || v === undefined)
+    return <span className="text-slate-500">—</span>;
+  const n = Number(v);
+  const sign = n > 0 ? "+" : "";
+  const color =
+    n > 0 ? "text-emerald-400" : n < 0 ? "text-red-400" : "text-slate-300";
+  return <span className={color}>{`${sign}${n.toLocaleString()}`}</span>;
+}
 
-  const colorMap = {
-    1: "bg-blue-500/15 text-blue-200 border-blue-500/30",
-    2: "bg-red-500/15 text-red-200 border-red-500/30",
-    3: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30",
-    4: "bg-yellow-500/15 text-yellow-200 border-yellow-500/30",
-  };
+function StatusDot({ status }) {
+  const raw = String(status ?? "").trim();
+  const s = raw.toLowerCase();
+
+  // défaut si status vide/unknown
+  let cls = "bg-slate-500/70";
+  let title = raw || "Inconnu";
+
+  // backend: "actif" | "absent" | "arret_sans_nouvelle"
+  // tolère aussi "arret"/"arrêt" si jamais tu en as côté front
+  if (s === "actif") {
+    cls = "bg-emerald-400";
+    title = "Actif";
+  } else if (s === "absent") {
+    cls = "bg-orange-400";
+    title = "Absent";
+  } else if (s === "arret_sans_nouvelle" || s === "arret" || s === "arrêt") {
+    cls = "bg-red-400";
+    title = "Arret";
+  }
 
   return (
     <span
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-        colorMap[classId] || "bg-slate-500/10 text-slate-200 border-slate-600/30"
-      }`}
-      title={name}
-    >
-      {iconSrc ? (
-        <img src={iconSrc} alt={name} className="h-5 w-5" loading="lazy" />
-      ) : (
-        <span className="h-2 w-2 rounded-full bg-current opacity-70" />
-      )}
-      <span>{name}</span>
-    </span>
-  );
-}
-
-function DiffCell({ value, title }) {
-  if (value === null || value === undefined) {
-    return (
-      <td className="px-3 py-3 text-right text-slate-500" title={title}>
-        —
-      </td>
-    );
-  }
-
-  const color =
-    value > 0 ? "text-emerald-400" : value < 0 ? "text-red-400" : "text-slate-400";
-
-  const sign = value > 0 ? "+" : "";
-
-  return (
-    <td className={`px-3 py-3 text-right font-mono ${color}`} title={title}>
-      {sign}
-      {Number(value).toLocaleString()}
-    </td>
+      title={title}
+      className={`inline-block h-2.5 w-2.5 rounded-full ring-2 ring-slate-950 ${cls}`}
+    />
   );
 }

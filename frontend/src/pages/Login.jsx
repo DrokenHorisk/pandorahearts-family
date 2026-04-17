@@ -1,3 +1,4 @@
+// frontend/src/pages/Login.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../api";
@@ -47,7 +48,7 @@ export default function Login() {
         <div className="mt-5 space-y-3">
           <input
             className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-400/40"
-            placeholder="Username (Droken / Admin)"
+            placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />

@@ -88,3 +88,4 @@ def require_roles(*allowed_roles: str):
             raise HTTPException(status_code=403, detail="Forbidden")
         return user
     return dep
+
