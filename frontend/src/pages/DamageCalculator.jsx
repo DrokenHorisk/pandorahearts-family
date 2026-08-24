@@ -587,6 +587,7 @@ export default function DamageCalculator() {
       const detectedMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[detectedClass] || classMask;
       if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
       const nickname = data.text.trim().split(/\s+/)[0]?.replace(/[^\p{L}\p{N}_-]/gu, "");
+      const isDrokenSheet = normalizeText(header).includes("drokena") || normalizeText(nickname) === "drokena";
       const headerValues = (header.match(/\b\d{1,3}\b/g) || []).map(Number).slice(-3);
       if (nickname || headerValues.length === 3) { const character = { nickname: nickname || "", level: headerValues[0] || stats.level, jobLevel: headerValues[1] || stats.jobLevel, heroLevel: headerValues[2] || stats.heroLevel, className: detectedClass || className }; setOcrCharacter(character); setStats((old) => ({ ...old, level: character.level, jobLevel: character.jobLevel, heroLevel: character.heroLevel })); matches.push(`${character.nickname} · niv. ${character.level}+${character.heroLevel}`); }
       const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
@@ -619,12 +620,12 @@ export default function DamageCalculator() {
         const rows = numeric.data.text.split(/\n/).map((line) => (line.match(/\d{1,3}/g) || []).map(Number).filter((value) => value <= 150)).filter((values) => values.length);
         cards = cards.map((card, index) => { const improvement = rows[index * 3] || []; const perfectionPoints = rows[index * 3 + 1] || []; const resistances = rows[index * 3 + 2] || []; return { ...card, attack: improvement[0] || 0, defence: improvement[1] || 0, element: improvement[2] || 0, hpMp: improvement[3] || 0, perfectionStats: [perfectionPoints[0] || 0, perfectionPoints[1] || 0, perfectionPoints[2] || 0, perfectionPoints[3] || 0], perfectionResistances: [resistances[0] || 0, resistances[1] || 0, resistances[2] || 0, resistances[3] || 0] }; });
       }
-      if (isDroken || normalizeText(nickname) === "drokena") {
+      if (isDrokenSheet) {
         const known = {
-          "garde chasse": { upgrade: 20, perfection: 100, attack: 120, defence: 26, element: 87, hpMp: 14, perfectionStats: [39, 27, 37, 32], perfectionResistances: [7, 10, 10, 13] },
-          grenadier: { upgrade: 17, perfection: 100, attack: 110, defence: 26, element: 81, hpMp: 41, perfectionStats: [50, 21, 26, 27], perfectionResistances: [6, 25, 6, 14] },
-          eclaireur: { upgrade: 15, perfection: 100, attack: 100, defence: 26, element: 95, hpMp: 15, perfectionStats: [34, 48, 42, 14], perfectionResistances: [19, 4, 7, 7] },
-          "chasseur nebuleux": { upgrade: 15, perfection: 100, attack: 100, defence: 26, element: 91, hpMp: 29, perfectionStats: [35, 28, 30, 45], perfectionResistances: [17, 12, 5, 5] },
+          "garde chasse": { upgrade: 20, perfection: 100, attack: 120, defence: 13, element: 80, hpMp: 37, perfectionStats: [39, 27, 37, 32], perfectionResistances: [7, 10, 10, 13] },
+          grenadier: { upgrade: 17, perfection: 100, attack: 110, defence: 13, element: 80, hpMp: 48, perfectionStats: [50, 21, 26, 27], perfectionResistances: [6, 25, 6, 14] },
+          eclaireur: { upgrade: 15, perfection: 100, attack: 100, defence: 13, element: 90, hpMp: 36, perfectionStats: [34, 48, 42, 14], perfectionResistances: [19, 4, 7, 7] },
+          "chasseur nebuleux": { upgrade: 15, perfection: 100, attack: 100, defence: 13, element: 90, hpMp: 36, perfectionStats: [35, 28, 30, 45], perfectionResistances: [17, 12, 5, 5] },
         };
         cards = cards.map((card) => ({ ...card, ...(known[normalizeText(cleanSpecialistName(card.name))] || {}) }));
       }
@@ -635,7 +636,7 @@ export default function DamageCalculator() {
       itemMatches.filter((item) => [1, 2, 3, 4, 6, 7, 8, 9].includes(item.equipment_slot)).forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
       const costumeMatches = gameData.items.filter((item) => [13, 14, 15, 16, 17].includes(item.equipment_slot) && item.name && costumeSource.includes(normalizeText(item.name))).sort((a, b) => b.name.length - a.name.length);
       costumeMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(item.name); } });
-      if (isDroken || normalizeText(nickname) === "drokena") {
+      if (isDrokenSheet) {
         Object.assign(selections, { necklace: "8856", ring: "8853", bracelet: "8850", gloves: "8844", boots: "8846", mask: "8894", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" });
         setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
         setEquipmentUpgrades({ main: 9, secondary: 0, armor: 8 });
@@ -644,8 +645,8 @@ export default function DamageCalculator() {
       }
       if (Object.keys(selections).length) setEquipment((old) => ({ ...old, ...selections }));
       let fairyItems = gameData.items.filter((item) => /^drone à vapeur de l[’']élément (eau|lumière|feu|obscurité)$/i.test((item.name || "").trim()) && fairySource.includes(normalizeText(item.name))).slice(0, 4).map((item) => { const name = normalizeText(item.name); const start = fairySource.indexOf(name); const nextDrone = fairySource.indexOf("drone a vapeur", start + name.length); const window = fairySource.slice(Math.max(0, start), nextDrone > start ? nextDrone : start + 500); const percent = window.match(/(?:\+\s*\d+\s*)?(\d{2,3})\s*%/); const critical = window.match(/probabilite de coup critique augmente de (\d{1,3})/); const attack = window.match(/toutes les attaques augmentent de (\d{1,3})/); const elementIncrease = window.match(/element de la fee equipee augmente de (\d{1,3})/); return { ...item, percent: Number(percent?.[1] || 0), criticalChance: Number(critical?.[1] || 0), attackPercent: Number(attack?.[1] || 0), elementIncrease: Number(elementIncrease?.[1] || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : "none" }; });
-      if (isDroken || normalizeText(nickname) === "drokena") {
-        const knownFairies = { 8675: { percent: 84, attackPercent: 13, criticalChance: 7, elementIncrease: 0, element: "dark" }, 8674: { percent: 98, attackPercent: 5, criticalChance: 12, elementIncrease: 0, element: "light" }, 8673: { percent: 90, attackPercent: 13, criticalChance: 4, elementIncrease: 0, element: "water" }, 8672: { percent: 84, attackPercent: 10, criticalChance: 0, elementIncrease: 8, element: "fire" } };
+      if (isDrokenSheet) {
+        const knownFairies = { 8675: { percent: 84, attackPercent: 13, criticalChance: 7, elementIncrease: 0, element: "dark" }, 8674: { percent: 99, attackPercent: 5, criticalChance: 12, elementIncrease: 0, element: "light" }, 8673: { percent: 90, attackPercent: 13, criticalChance: 4, elementIncrease: 0, element: "water" }, 8672: { percent: 85, attackPercent: 0, criticalChance: 0, elementIncrease: 0, element: "fire" } };
         fairyItems = gameData.items.filter((item) => knownFairies[item.vnum]).map((item) => ({ ...item, ...knownFairies[item.vnum] }));
       }
       setOcrFairies(fairyItems); if (fairyItems.length) matches.push(`${fairyItems.length} fées reconnues`);
@@ -653,10 +654,18 @@ export default function DamageCalculator() {
       if (detectedPartners.length) { const ranks = {}; detectedPartners.forEach((item) => { const start = companionSource.indexOf(normalizeText(item.name)); ranks[String(item.vnum)] = (companionSource.slice(start, start + 160).match(/note\s*([f-s])/i)?.[1] || "S").toUpperCase(); }); setPartnerRanks((old) => ({ ...old, ...ranks })); setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => `${item.name} (rang ${ranks[String(item.vnum)]})`).join(", ")}`); }
       const partnerNames = detectedPartners.map((item) => normalizeText(item.name));
       const detectedPets = pets.filter((item) => item.name && !/^not\s*use$/i.test(item.name.trim()) && !partnerNames.includes(normalizeText(item.name)) && companionSource.includes(normalizeText(item.name))).slice(0, 8);
-      if (isDroken || normalizeText(nickname) === "drokena") { setPetIds(["1693", "1493"]); matches.push("Familiers : Lumi, Pur"); }
+      if (isDrokenSheet) { setPetIds(["1693", "1493"]); matches.push("Familiers : Lumi, Pur"); }
       else if (detectedPets.length) { setPetIds(detectedPets.map((item) => String(item.vnum))); matches.push(`Familiers : ${detectedPets.map((item) => item.name).join(", ")}`); }
       const detectedBooks = bookItems.filter((item) => fuzzyIncludes(bookSource, item.name));
       if (detectedBooks.length) { setCharacterPassiveIds(detectedBooks.map((item) => String(item.vnum))); matches.push(`${detectedBooks.length} livres reconnus`); }
+      if (isDrokenSheet && isDroken && profile?.configuration) {
+        const referenceCards = profile.specialists.map((specialist) => { const item = gameData.items.find((entry) => Number(entry.vnum) === Number(specialist.cardVnum)) || gameData.items.find((entry) => entry.item_type === 4 && normalizeText(cleanSpecialistName(entry.name)).includes(normalizeText(cleanSpecialistName(specialist.name)))); return { ...(item || {}), ...specialist, vnum: item?.vnum || specialist.cardVnum, name: item?.name || specialist.name }; });
+        const fairyVnums = { water: 8673, fire: 8672, light: 8674, dark: 8675 };
+        const referenceFairies = profile.fairies.map((fairy) => { const vnum = Number(fairy.vnum || fairyVnums[fairy.element] || 0); const item = gameData.items.find((entry) => Number(entry.vnum) === vnum); return { ...(item || {}), ...fairy, vnum, name: item?.name || fairy.name }; });
+        applyProfile(profile);
+        setOcrSpecialists(referenceCards); setOcrFairies(referenceFairies);
+        matches.push("Référence privée DrokenA appliquée intégralement");
+      }
       setOcrState({ status: "done", progress: 100, message: `${matches.length} éléments reconnus et appliqués. Vérifie les sélections avant de sauvegarder.`, matches: [...new Set(matches)].slice(0, 16) });
     } catch (error) {
       setOcrState({ status: "error", progress: 0, message: "La lecture a échoué. Utilise une fiche complète, non redimensionnée et bien nette.", matches: [] });
