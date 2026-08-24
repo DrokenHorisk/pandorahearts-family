@@ -1,5 +1,5 @@
 import React from "react";
-import { HashRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import HistoryDashboard from "./pages/HistoryDashboard";
 import PlayerDashboard from "./pages/PlayerDashboard";
@@ -48,7 +48,7 @@ function Shell() {
 }
 
 export default function App() {
-  return <HashRouter><Shell /></HashRouter>;
+  return <BrowserRouter><Shell /></BrowserRouter>;
 }
 
 function TabButton({ active, children, ...props }) {
