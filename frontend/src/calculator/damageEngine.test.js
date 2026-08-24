@@ -19,10 +19,13 @@ test("elemental resistance reduces elemental damage", () => {
   assert.ok(calculateDamage({ ...base, resistance: 0 }).normalMin > calculateDamage({ ...base, resistance: 80 }).normalMin);
 });
 
-test("weapon upgrade is applied before monster defence", () => {
+test("weapon and monster upgrades are compared before defence", () => {
   const base = { attackMin: 1000, attackMax: 1000, defence: 500, attackElement: "none", monsterElement: "none" };
   const upgraded = calculateDamage({ ...base, weaponUpgrade: 9 });
-  assert.equal(upgraded.upgradePercent, 90);
-  assert.equal(upgraded.upgradeAttack, 900);
-  assert.equal(upgraded.normalMin, 1400);
+  assert.equal(upgraded.upgradePercent, 120);
+  assert.equal(upgraded.upgradeAttack, 1200);
+  assert.equal(upgraded.normalMin, 1700);
+  const defended = calculateDamage({ ...base, weaponUpgrade: 9, monsterDefenceUpgrade: 14 });
+  assert.equal(defended.defenceUpgradePercent, 43);
+  assert.equal(defended.effectiveDefence, 715);
 });

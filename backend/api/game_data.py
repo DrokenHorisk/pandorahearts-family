@@ -29,6 +29,7 @@ def _summary(row):
         "item_type": payload.get("ItemType"),
         "item_sub_type": payload.get("ItemSubType"),
         "defence": (payload.get("Armor") or {}).get("Defence"),
+        "defence_upgrade": (payload.get("Armor") or {}).get("Upgrade"),
         "resistances": payload.get("Resistances"),
         "mp_cost": payload.get("MPCost"),
         "cooldown": payload.get("Cooldown"),

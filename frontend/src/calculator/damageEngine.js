@@ -10,7 +10,7 @@ export const ELEMENTS = {
 
 // Bonus officiels d'amélioration d'arme utilisés par le jeu. Le bonus est
 // appliqué à l'attaque de l'arme avant la défense de la cible.
-export const WEAPON_UPGRADE_BONUS = [0, 10, 15, 22, 32, 43, 54, 65, 80, 90, 100];
+export const WEAPON_UPGRADE_BONUS = [0, 10, 15, 22, 32, 43, 54, 65, 90, 120, 200];
 
 export function calculateDamage(input) {
   const attackMin = Math.max(0, Number(input.attackMin) || 0);
@@ -18,7 +18,11 @@ export function calculateDamage(input) {
   const skillPower = Math.max(0, Number(input.skillPower) || 0);
   const flatAttack = Math.max(0, Number(input.flatAttack) || 0);
   const weaponUpgrade = clamp(input.weaponUpgrade, 0, 10);
-  const upgradePercent = WEAPON_UPGRADE_BONUS[weaponUpgrade] || 0;
+  const monsterDefenceUpgrade = Math.max(0, Number(input.monsterDefenceUpgrade) || 0);
+  const attackUpgradeDifference = Math.max(0, weaponUpgrade - monsterDefenceUpgrade);
+  const defenceUpgradeDifference = Math.max(0, monsterDefenceUpgrade - weaponUpgrade);
+  const upgradePercent = WEAPON_UPGRADE_BONUS[attackUpgradeDifference] || 0;
+  const defenceUpgradePercent = WEAPON_UPGRADE_BONUS[defenceUpgradeDifference] || 0;
   const upgradeAttack = Math.floor(((attackMin + attackMax) / 2) * upgradePercent / 100);
   const attackPercent = Math.max(-100, Number(input.attackPercent) || 0);
   const monsterDamage = Math.max(-100, Number(input.monsterDamage) || 0);
@@ -28,7 +32,7 @@ export function calculateDamage(input) {
   const defence = Math.max(0, Number(input.defence) || 0);
   const defenceReduction = clamp(input.defenceReduction, 0, 100);
   const resistanceReduction = clamp(input.resistanceReduction, 0, 100);
-  const effectiveDefence = defence * (1 - defenceReduction / 100);
+  const effectiveDefence = defence * (1 + defenceUpgradePercent / 100) * (1 - defenceReduction / 100);
   const baseMultiplier = (1 + attackPercent / 100) * (1 + monsterDamage / 100) * (1 + buffDamage / 100) * (1 + debuffDamage / 100);
 
   const physical = (attack) => Math.max(1, (attack + upgradeAttack + flatAttack + runicAttack + skillPower - effectiveDefence) * baseMultiplier);
@@ -50,12 +54,24 @@ export function calculateDamage(input) {
   const criticalRate = Math.max(100, Number(input.criticalDamage) || 150);
   const criticalMin = Math.floor(normalMin * (criticalRate / 100));
   const criticalMax = Math.floor(normalMax * (criticalRate / 100));
+  const increasedDamagePercent = Math.max(0, Number(input.increasedDamagePercent) || 0);
+  const increasedCriticalPercent = Math.max(0, Number(input.increasedCriticalPercent) || 0);
+  const increasedMin = Math.floor(normalMin * (1 + increasedDamagePercent / 100));
+  const increasedMax = Math.floor(normalMax * (1 + increasedDamagePercent / 100));
+  const criticalIncreasedMin = Math.floor(criticalMin * (1 + increasedDamagePercent / 100) * (1 + increasedCriticalPercent / 100));
+  const criticalIncreasedMax = Math.floor(criticalMax * (1 + increasedDamagePercent / 100) * (1 + increasedCriticalPercent / 100));
 
   return {
     normalMin,
     normalMax,
     criticalMin,
     criticalMax,
+    increasedMin,
+    increasedMax,
+    criticalIncreasedMin,
+    criticalIncreasedMax,
+    increasedDamageChance: clamp(input.increasedDamageChance, 0, 100),
+    increasedCriticalChance: clamp(input.increasedCriticalChance, 0, 100),
     criticalChance: clamp(input.criticalChance, 0, 100),
     physicalMin: Math.floor(physicalMin),
     physicalMax: Math.floor(physicalMax),
@@ -65,6 +81,8 @@ export function calculateDamage(input) {
     weaponUpgrade,
     upgradePercent,
     upgradeAttack,
+    monsterDefenceUpgrade,
+    defenceUpgradePercent,
     effectiveResistance: resistance,
     confidence: "experimental",
   };
