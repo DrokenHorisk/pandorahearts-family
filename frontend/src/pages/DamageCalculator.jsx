@@ -10,6 +10,8 @@ const defaults = {
   attackElement: "light", fairyElement: 80, elementPower: 0, monsterElement: "dark",
   defence: 500, defenceReduction: 0, resistance: 0, resistanceReduction: 0,
   weaponUpgrade: 0, buffDamage: 0, debuffDamage: 0, runicAttack: 0,
+  monsterDefenceUpgrade: 0, increasedDamageChance: 0, increasedDamagePercent: 0,
+  increasedCriticalChance: 0, increasedCriticalPercent: 0,
 };
 
 const fieldClass = "mt-1 w-full rounded-xl border border-[#3b2852] bg-[#12091d] px-3 py-2.5 text-[#f3eaff] outline-none transition focus:border-[#9b6bcc]";
@@ -39,21 +41,22 @@ function ResultCard({ label, value, accent }) {
   </div>;
 }
 
-function DataPicker({ label, items, value, onChange, placeholder = "Rechercher…" }) {
+function MultiDataPicker({ label, items, values, onChange, placeholder = "Rechercher…", emptyText = "Aucun effet sélectionné" }) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => items.filter((item) => item.name?.toLowerCase().includes(query.toLowerCase())).slice(0, 120), [items, query]);
-  const selected = items.find((item) => String(item.vnum) === String(value));
+  const selected = items.filter((item) => values.includes(String(item.vnum)));
+  const toggle = (id) => onChange(values.includes(id) ? values.filter((value) => value !== id) : [...values, id]);
   return <div>
-    <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">{label}</span><span className="text-[10px] text-[#79668a]">{items.length.toLocaleString("fr-FR")} entrées</span></div>
+    <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">{label}</span><span className="text-[10px] text-[#79668a]">{selected.length} sélectionné{selected.length > 1 ? "s" : ""}</span></div>
     <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} className={fieldClass} />
     <div className="mt-2 flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-xl border border-[#39254d] bg-[#100719] p-2">
-      {filtered.map((item) => <button type="button" key={item.vnum} onClick={() => onChange(String(item.vnum))} title={item.name} className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition ${String(value) === String(item.vnum) ? "border-[#c58af2] bg-[#512c70] text-white" : "border-[#38244b] bg-[#190d27] text-[#cbb8dc] hover:border-[#765091]"}`}>
+      {filtered.map((item) => <button type="button" key={item.vnum} onClick={() => toggle(String(item.vnum))} title={item.name} className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition ${values.includes(String(item.vnum)) ? "border-[#c58af2] bg-[#512c70] text-white" : "border-[#38244b] bg-[#190d27] text-[#cbb8dc] hover:border-[#765091]"}`}>
         {item.icon_url ? <img src={item.icon_url} alt="" className="h-7 w-7 shrink-0 rounded bg-[#0c0512] object-contain p-0.5" /> : <span className="grid h-7 w-7 shrink-0 place-items-center rounded bg-[#0c0512]">✦</span>}
         <span className="max-w-40 truncate">{item.name}</span>
       </button>)}
       {!filtered.length && <span className="p-2 text-xs text-[#806d90]">Aucun résultat</span>}
     </div>
-    {selected && <div className="mt-2 flex items-center gap-2 rounded-xl border border-[#583b70] bg-[#241331] p-2 text-sm font-bold">{selected.icon_url && <img src={selected.icon_url} alt="" className="h-9 w-9 object-contain" />}<span>{selected.name}</span><button type="button" onClick={() => onChange("")} className="ml-auto text-[#9b84ad]">×</button></div>}
+    <div className="mt-2 flex flex-wrap gap-2">{selected.map((item) => <button type="button" key={item.vnum} onClick={() => toggle(String(item.vnum))} className="flex items-center gap-2 rounded-xl border border-[#583b70] bg-[#241331] p-2 text-xs font-bold">{item.icon_url && <img src={item.icon_url} alt="" className="h-7 w-7 object-contain" />}<span>{item.name}</span><span className="text-[#9b84ad]">×</span></button>)}{!selected.length && <span className="text-xs text-[#806d90]">{emptyText}</span>}</div>
   </div>;
 }
 
@@ -61,7 +64,7 @@ export default function DamageCalculator() {
   const user = getUser();
   const isDroken = user?.username?.toLowerCase() === "droken";
   const [stats, setStats] = useState(defaults);
-  const [monsterId, setMonsterId] = useState("custom");
+  const [monsterId, setMonsterId] = useState("1619");
   const [skillId, setSkillId] = useState("basic");
   const [specialistId, setSpecialistId] = useState("");
   const [fairyId, setFairyId] = useState("");
@@ -76,11 +79,19 @@ export default function DamageCalculator() {
   const [gameData, setGameData] = useState({ monsters: [], skills: [], items: [], buffs: [], effects: [] });
   const [mainWeaponVnum, setMainWeaponVnum] = useState("");
   const [secondaryWeaponVnum, setSecondaryWeaponVnum] = useState("");
-  const [buffId, setBuffId] = useState("");
-  const [debuffId, setDebuffId] = useState("");
-  const [runicId, setRunicId] = useState("");
+  const [buffIds, setBuffIds] = useState([]);
+  const [debuffIds, setDebuffIds] = useState([]);
+  const [runicIds, setRunicIds] = useState([]);
+  const [tattooIds, setTattooIds] = useState([]);
+  const [partnerIds, setPartnerIds] = useState([]);
+  const [petIds, setPetIds] = useState([]);
+  const [characterPassiveIds, setCharacterPassiveIds] = useState([]);
+  const [familyPassiveIds, setFamilyPassiveIds] = useState([]);
+  const [showEffectDetails, setShowEffectDetails] = useState(true);
+  const [heroicJewels, setHeroicJewels] = useState({ necklace: false, ring: false, bracelet: false });
   const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
-  const result = useMemo(() => calculateDamage(stats), [stats]);
+  const heroicSetActive = Object.values(heroicJewels).every(Boolean);
+  const result = useMemo(() => calculateDamage({ ...stats, attackPercent: stats.attackPercent + (heroicSetActive ? 3 : 0) }), [stats, heroicSetActive]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === nextSpecialist) || loadedProfile.specialists[0];
@@ -134,6 +145,19 @@ export default function DamageCalculator() {
       fetch(`${API_BASE}/game-data/effects?limit=500`).then((response) => response.ok ? response.json() : []),
     ]).then(([monsters, skills, items, buffs, effects]) => setGameData({ monsters, skills, items, buffs, effects })).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const nezarun = gameData.monsters.find((item) => item.vnum === 1619);
+    if (!nezarun || monsterId !== "1619") return;
+    const defenceKey = className === "mage" ? "Magic" : className === "archer" ? "Ranged" : "Melee";
+    const elementKey = { fire: "Fire", water: "Water", light: "Light", dark: "Shadow" }[stats.attackElement];
+    setStats((old) => ({ ...old,
+      monsterElement: ["none", "fire", "water", "light", "dark"][nezarun.element] || "none",
+      defence: nezarun.defence?.[defenceKey] || 0,
+      resistance: nezarun.resistances?.[elementKey] || 0,
+      monsterDefenceUpgrade: nezarun.defence_upgrade || 0,
+    }));
+  }, [gameData.monsters.length, className]);
 
   const selectSpecialist = (event) => {
     if (event.target.value === "custom") {
@@ -203,11 +227,12 @@ export default function DamageCalculator() {
     setMonsterId(id);
     if (monster && id !== "custom") {
       const defenceKey = className === "mage" ? "Magic" : className === "archer" ? "Ranged" : "Melee";
-      const elementKey = { fire: "Fire", water: "Water", light: "Light", dark: "Dark" }[stats.attackElement];
+      const elementKey = { fire: "Fire", water: "Water", light: "Light", dark: "Shadow" }[stats.attackElement];
       setStats((old) => ({
         ...old,
         monsterElement: ["none", "fire", "water", "light", "dark"][monster.element] || monster.element || "none",
         defence: monster.defence?.[defenceKey] ?? monster.defence ?? 0,
+        monsterDefenceUpgrade: monster.defence_upgrade || 0,
         resistance: monster.resistances?.[elementKey] ?? monster.resistance ?? 0,
       }));
     }
@@ -231,6 +256,9 @@ export default function DamageCalculator() {
   }[className];
   const selectedMainWeapon = mainWeapons.find((item) => String(item.vnum) === mainWeaponVnum);
   const selectedSecondaryWeapon = secondaryWeapons.find((item) => String(item.vnum) === secondaryWeaponVnum);
+  const selectedMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
+  const monsterLocked = Boolean(selectedMonster);
+  const selectedDebuffs = gameData.buffs.filter((item) => debuffIds.includes(String(item.vnum)));
   useEffect(() => {
     if (!profile || !gameData.items.length) return;
     setMainWeaponVnum(String(profile.weapon.vnum || ""));
@@ -332,10 +360,22 @@ export default function DamageCalculator() {
         {syncState.error && <span className="text-xs text-rose-300">La synchronisation a pris trop de temps ou a échoué ; consulte le statut avant de relancer.</span>}
       </div>}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <section className="mb-6 rounded-2xl border border-[#4a315f] bg-[#180d26] p-4">
+        <button type="button" onClick={() => setShowEffectDetails((value) => !value)} className="flex w-full items-center justify-between gap-4 text-left">
+          <span><span className="block text-xs font-black uppercase tracking-widest text-[#c48ce9]">Effets actuellement appliqués</span><span className="mt-1 block text-sm text-[#a991bd]">{buffIds.length} buff{buffIds.length > 1 ? "s" : ""} · {debuffIds.length} débuff{debuffIds.length > 1 ? "s" : ""} · {characterPassiveIds.length + familyPassiveIds.length} passif{characterPassiveIds.length + familyPassiveIds.length > 1 ? "s" : ""}</span></span>
+          <span className="rounded-lg border border-[#55396c] bg-[#241331] px-3 py-2 text-xs font-bold text-[#d6bee8]">{showEffectDetails ? "Masquer" : "Afficher"}</span>
+        </button>
+        {showEffectDetails && <div className="mt-4 border-t border-[#39254d] pt-4">
+          <div className="flex flex-wrap gap-2">{selectedDebuffs.map((item) => <span key={item.vnum} className="flex items-center gap-2 rounded-lg border border-rose-900/60 bg-rose-950/20 px-2.5 py-2 text-xs text-rose-200">{item.icon_url && <img src={item.icon_url} alt="" className="h-6 w-6 object-contain" />}<strong>{item.name}</strong>{item.first_data != null && <span>· valeur {item.first_data}</span>}</span>)}{!selectedDebuffs.length && <span className="text-xs text-[#806d90]">Aucun débuff actif sur la cible.</span>}</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Défense retirée" value={stats.defenceReduction} onChange={number(setStats, "defenceReduction")} suffix="%" max={100} /><Field label="Résistance retirée" value={stats.resistanceReduction} onChange={number(setStats, "resistanceReduction")} suffix="%" max={100} /><Field label="Dégâts subis en plus" value={stats.debuffDamage} onChange={number(setStats, "debuffDamage")} suffix="%" /></div>
+        </div>}
+      </section>
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ResultCard label="Dégâts normaux" accent="text-[#c295e6]" value={`${result.normalMin.toLocaleString("fr-FR")} ~ ${result.normalMax.toLocaleString("fr-FR")}`} />
         <ResultCard label={`Coup critique · ${result.criticalChance}%`} accent="text-[#ef8fa8]" value={`${result.criticalMin.toLocaleString("fr-FR")} ~ ${result.criticalMax.toLocaleString("fr-FR")}`} />
-        <ResultCard label="Part élémentaire" accent="text-[#77d5d2]" value={`${result.elementalMin.toLocaleString("fr-FR")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`} />
+        <ResultCard label={`Dégâts augmentés · ${result.increasedDamageChance}%`} accent="text-[#f0b46d]" value={`${result.increasedMin.toLocaleString("fr-FR")} ~ ${result.increasedMax.toLocaleString("fr-FR")}`} />
+        <ResultCard label={`Critique + augmentés · ${result.increasedCriticalChance}%`} accent="text-[#ff718f]" value={`${result.criticalIncreasedMin.toLocaleString("fr-FR")} ~ ${result.criticalIncreasedMax.toLocaleString("fr-FR")}`} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -347,6 +387,11 @@ export default function DamageCalculator() {
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[0]}<div className="mt-1 flex items-center gap-2">{selectedMainWeapon?.icon_url && <img src={selectedMainWeapon.icon_url} alt="" className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}<select value={mainWeaponVnum} onChange={(event) => setMainWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{mainWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2">{selectedSecondaryWeapon?.icon_url && <img src={selectedSecondaryWeapon.icon_url} alt="" className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}<select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
             </div>}
+            <div className="mt-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3">
+              <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Ensemble de bijoux héroïques</div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">{[["necklace", "Collier héroïque 94"], ["ring", "Anneau héroïque 96"], ["bracelet", "Bracelet héroïque 98"]].map(([key, label]) => <label key={key} className={`flex cursor-pointer items-center gap-2 rounded-lg border p-2 text-xs font-bold ${heroicJewels[key] ? "border-[#a46bd0] bg-[#43255d]" : "border-[#38244b] bg-[#190d27] text-[#a991bd]"}`}><input type="checkbox" checked={heroicJewels[key]} onChange={(event) => setHeroicJewels((old) => ({ ...old, [key]: event.target.checked }))} />{label}</label>)}</div>
+              <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-bold ${heroicSetActive ? "bg-emerald-950/40 text-emerald-300" : "bg-[#1b1027] text-[#806d90]"}`}>{heroicSetActive ? "✓ Bonus d’ensemble actif : toutes les attaques +3 %" : "Équipe les trois bijoux pour activer le bonus caché de +3 % d’attaque."}</div>
+            </div>
             {profile && <p className="mt-3 rounded-xl border border-[#4a335f] bg-[#12091d] p-3 text-xs text-[#b9a4ca]">Valeurs privées DrokenA chargées automatiquement. Elles restent modifiables pour simuler un autre équipement.</p>}
           </Section>
           <Section icon="🔮" title="Rune, options d’arme et compétence">
@@ -354,6 +399,7 @@ export default function DamageCalculator() {
             <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Effets de rune et options cumulés — modifiables</div>
             <div className="grid gap-3 sm:grid-cols-4"><Field label="Puissance skill" value={stats.skillPower} onChange={number(setStats, "skillPower")} /><Field label="Attaque fixe" value={stats.flatAttack} onChange={number(setStats, "flatAttack")} /><Field label="Amélioration arme" value={stats.weaponUpgrade} onChange={number(setStats, "weaponUpgrade")} suffix={`+${result.upgradePercent}%`} max={10} /><Field label="Toutes attaques" value={stats.attackPercent} onChange={number(setStats, "attackPercent")} suffix="%" min={-100} /></div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Dégâts monstres" value={stats.monsterDamage} onChange={number(setStats, "monsterDamage")} suffix="%" min={-100} /><Field label="Chance critique" value={stats.criticalChance} onChange={number(setStats, "criticalChance")} suffix="%" max={100} /><Field label="Dégâts critiques" value={stats.criticalDamage} onChange={number(setStats, "criticalDamage")} suffix="%" /></div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-4"><Field label="Chance dégâts augmentés" value={stats.increasedDamageChance} onChange={number(setStats, "increasedDamageChance")} suffix="%" max={100} /><Field label="Dégâts augmentés" value={stats.increasedDamagePercent} onChange={number(setStats, "increasedDamagePercent")} suffix="%" /><Field label="Chance critique augmenté" value={stats.increasedCriticalChance} onChange={number(setStats, "increasedCriticalChance")} suffix="%" max={100} /><Field label="Bonus critique augmenté" value={stats.increasedCriticalPercent} onChange={number(setStats, "increasedCriticalPercent")} suffix="%" /></div>
           </Section>
           <Section icon="✨" title="Élément">
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Élément d’attaque<select value={stats.attackElement} onChange={(event) => setStats((old) => ({ ...old, attackElement: event.target.value }))} className={fieldClass}>{Object.entries(ELEMENTS).map(([key, item]) => <option key={key} value={key}>{item.icon} {item.label}</option>)}</select></label>
@@ -365,23 +411,37 @@ export default function DamageCalculator() {
           <Section icon="👹" title="Monstre">
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Choisir une cible<select value={monsterId} onChange={selectMonster} className={fieldClass}>{MONSTERS.map((monster) => <option key={monster.id} value={monster.id}>{monster.icon} {monster.name}</option>)}{gameData.monsters.map((monster) => <option key={monster.vnum} value={monster.vnum}>{monster.name} · niv. {monster.level}{monster.hero_level ? `+${monster.hero_level}` : ""}</option>)}</select></label>
             {gameData.monsters.find((monster) => String(monster.vnum) === monsterId)?.icon_url && <img src={gameData.monsters.find((monster) => String(monster.vnum) === monsterId).icon_url} alt="" className="mb-3 h-16 w-16 rounded-xl border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}
-            <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Élément<select value={stats.monsterElement} onChange={(event) => setStats((old) => ({ ...old, monsterElement: event.target.value }))} className={fieldClass}>{Object.entries(ELEMENTS).map(([key, item]) => <option key={key} value={key}>{item.icon} {item.label}</option>)}</select></label>
-            <div className="grid gap-3 sm:grid-cols-2"><Field label="Défense" value={stats.defence} onChange={number(setStats, "defence")} /><Field label="Résistance" value={stats.resistance} onChange={number(setStats, "resistance")} suffix="%" max={200} /></div>
+            {monsterLocked ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[["Élément", ELEMENTS[stats.monsterElement]?.label], ["Défense distance", stats.defence.toLocaleString("fr-FR")], ["Amélioration", `+${stats.monsterDefenceUpgrade}`], ["Résistance", `${stats.resistance}%`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#3b2852] bg-[#12091d] p-3"><div className="text-[10px] font-bold uppercase text-[#8e78a0]">{label}</div><div className="mt-1 font-black text-[#eadcf5]">{value}</div></div>)}
+              <div className="col-span-2 rounded-lg bg-[#241331] px-3 py-2 text-xs text-[#bba5cc] sm:col-span-4">🔒 Les statistiques proviennent de la cible sélectionnée et sont protégées contre les modifications accidentelles.</div>
+            </div> : <><label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Élément<select value={stats.monsterElement} onChange={(event) => setStats((old) => ({ ...old, monsterElement: event.target.value }))} className={fieldClass}>{Object.entries(ELEMENTS).map(([key, item]) => <option key={key} value={key}>{item.icon} {item.label}</option>)}</select></label><div className="grid gap-3 sm:grid-cols-2"><Field label="Défense" value={stats.defence} onChange={number(setStats, "defence")} /><Field label="Résistance" value={stats.resistance} onChange={number(setStats, "resistance")} suffix="%" max={200} /></div></>}
           </Section>
-          <Section icon="🧿" title="Réductions et debuffs">
-            <div className="grid gap-3 sm:grid-cols-2"><Field label="Réduction défense" value={stats.defenceReduction} onChange={number(setStats, "defenceReduction")} suffix="%" max={100} /><Field label="Réduction résistance" value={stats.resistanceReduction} onChange={number(setStats, "resistanceReduction")} suffix="%" max={100} /></div>
-          </Section>
-          <Section icon="🟢" title="Buffs actifs">
-            <DataPicker label="Ajouter un buff" items={gameData.buffs} value={buffId} onChange={setBuffId} placeholder="Nom du buff…" />
+          <Section icon="🟢" title="Buffs de combat">
+            <MultiDataPicker label="Buffs actifs" items={gameData.buffs} values={buffIds} onChange={setBuffIds} placeholder="Nom du buff…" />
             <div className="mt-3"><Field label="Bonus de dégâts cumulé" value={stats.buffDamage} onChange={number(setStats, "buffDamage")} suffix="%" min={-100} /></div>
           </Section>
           <Section icon="🔻" title="Débuffs sur la cible">
-            <DataPicker label="Ajouter un débuff" items={gameData.buffs} value={debuffId} onChange={setDebuffId} placeholder="Nom du débuff…" />
-            <div className="mt-3"><Field label="Dégâts subis supplémentaires" value={stats.debuffDamage} onChange={number(setStats, "debuffDamage")} suffix="%" min={-100} /></div>
+            <MultiDataPicker label="Débuffs appliqués" items={gameData.buffs} values={debuffIds} onChange={setDebuffIds} placeholder="Nom du débuff…" />
           </Section>
           <Section icon="💠" title="Effets runiques">
-            <DataPicker label="Compétence runique" items={gameData.effects} value={runicId} onChange={setRunicId} placeholder="Nom de l’effet runique…" />
+            <MultiDataPicker label="Compétences runiques" items={gameData.effects} values={runicIds} onChange={setRunicIds} placeholder="Nom de l’effet runique…" />
             <div className="mt-3"><Field label="Attaque runique" value={stats.runicAttack} onChange={number(setStats, "runicAttack")} /></div>
+          </Section>
+          <Section icon="🖋️" title="Tatouages">
+            <MultiDataPicker label="Effets de tatouage" items={gameData.effects} values={tattooIds} onChange={setTattooIds} placeholder="Rechercher un tatouage…" />
+          </Section>
+          <Section icon="🧑‍🤝‍🧑" title="Partenaire">
+            <MultiDataPicker label="Buffs du partenaire" items={gameData.buffs} values={partnerIds} onChange={setPartnerIds} placeholder="Compétence ou buff du partenaire…" />
+          </Section>
+          <Section icon="🐾" title="Familier">
+            <MultiDataPicker label="Buffs du familier" items={gameData.buffs} values={petIds} onChange={setPetIds} placeholder="Compétence ou buff du familier…" />
+          </Section>
+          <Section icon="📚" title="Passifs personnage">
+            <p className="mb-3 text-xs leading-relaxed text-[#9f89b1]">Livres, entraînements et passifs permanents de ton personnage.</p>
+            <MultiDataPicker label="Livres et compétences passives" items={gameData.buffs} values={characterPassiveIds} onChange={setCharacterPassiveIds} placeholder="Rechercher un livre ou un passif…" />
+          </Section>
+          <Section icon="🏰" title="Passifs de famille">
+            <MultiDataPicker label="Effets débloqués par la famille" items={gameData.buffs} values={familyPassiveIds} onChange={setFamilyPassiveIds} placeholder="Rechercher un effet de famille…" />
           </Section>
           <Section icon="📊" title="Détail du calcul">
             <dl className="space-y-3 text-sm">{[["Bonus de l’arme", `+${result.upgradeAttack.toLocaleString("fr-FR")} (+${result.weaponUpgrade})`], ["Dégâts physiques", `${result.physicalMin.toLocaleString("fr-FR")} ~ ${result.physicalMax.toLocaleString("fr-FR")}`], ["Défense effective", result.effectiveDefence.toLocaleString("fr-FR")], ["Résistance effective", `${result.effectiveResistance}%`], ["Part élémentaire", `${result.elementalMin.toLocaleString("fr-FR")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#39254d] pb-2"><dt className="text-[#a991bd]">{label}</dt><dd className="font-black">{value}</dd></div>)}</dl>
