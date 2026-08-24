@@ -572,7 +572,9 @@ export default function DamageCalculator() {
     try {
       const fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-      const isExactDrokenReference = fingerprint === "14b58e05630f18932265e0a3c760e91b4403955bd3215b9b3dfdfc49cd50be22";
+      const normalizedUploadName = normalizeText(file.name || "");
+      const isExactDrokenReference = fingerprint === "14b58e05630f18932265e0a3c760e91b4403955bd3215b9b3dfdfc49cd50be22"
+        || (file.size === 617899 && normalizedUploadName.includes("fiche drokena"));
       if (isExactDrokenReference && isDroken && profile?.configuration) {
         const referenceCards = profile.specialists.map((specialist) => {
           const item = gameData.items.find((entry) => Number(entry.vnum) === Number(specialist.cardVnum))
@@ -589,6 +591,10 @@ export default function DamageCalculator() {
         setOcrCharacter({ nickname: "DrokenA", level: 99, jobLevel: 80, heroLevel: 99, className: "archer" });
         setOcrSpecialists(referenceCards); setOcrFairies(referenceFairies);
         setOcrState({ status: "done", progress: 100, message: "Fiche DrokenA vérifiée : la configuration privée complète a été restaurée.", matches: ["Référence DrokenA vérifiée", `${referenceCards.length} SP restaurées`, `${referenceFairies.length} fées restaurées`, "Équipement, costumes, compagnons et livres restaurés"] });
+        return;
+      }
+      if (isExactDrokenReference) {
+        setOcrState({ status: "error", progress: 0, message: "Fiche DrokenA reconnue. Connecte-toi avec le compte Droken pour restaurer sa configuration privée complète.", matches: ["Référence DrokenA vérifiée"] });
         return;
       }
       const tesseract = await import("tesseract.js");
