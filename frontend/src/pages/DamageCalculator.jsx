@@ -5,7 +5,7 @@ import { getToken, getUser } from "../auth";
 import { API_BASE } from "../api";
 
 const defaults = {
-  level: 99, attackMin: 1000, attackMax: 1200, flatAttack: 0, attackPercent: 0,
+  level: 99, jobLevel: 80, heroLevel: 99, attackMin: 1000, attackMax: 1200, flatAttack: 0, attackPercent: 0,
   monsterDamage: 0, skillPower: 0, criticalChance: 20, criticalDamage: 150,
   attackElement: "light", fairyElement: 80, elementPower: 0, monsterElement: "dark",
   defence: 500, defenceReduction: 0, resistance: 0, resistanceReduction: 0,
@@ -54,6 +54,18 @@ const cropOcrImage = async (file, left, top, width, height) => {
   const context = canvas.getContext("2d");
   context.filter = "grayscale(1) contrast(1.8)";
   context.drawImage(bitmap, bitmap.width * left, bitmap.height * top, bitmap.width * width, bitmap.height * height, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+};
+const prepareSpecialistNumbersImage = async (file, cardCount) => {
+  const bitmap = await createImageBitmap(file);
+  const columns = [557, 607, 657, 705].map((value) => value / 753);
+  const firstRow = 757 / 2048; const cardStep = 87 / 2048; const rowOffsets = [0, 27 / 2048, 53 / 2048];
+  const cellWidth = 140; const cellHeight = 78;
+  const canvas = document.createElement("canvas"); canvas.width = cellWidth * 4; canvas.height = cellHeight * cardCount * 3;
+  const context = canvas.getContext("2d"); context.fillStyle = "#000"; context.fillRect(0, 0, canvas.width, canvas.height); context.filter = "grayscale(1) contrast(2)";
+  for (let card = 0; card < cardCount; card += 1) for (let row = 0; row < 3; row += 1) for (let column = 0; column < 4; column += 1) {
+    context.drawImage(bitmap, bitmap.width * columns[column], bitmap.height * (firstRow + card * cardStep + rowOffsets[row]), bitmap.width * (27 / 753), bitmap.height * (18 / 2048), column * cellWidth + 12, (card * 3 + row) * cellHeight + 3, 116, 72);
+  }
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 };
 const between = (source, start, end) => {
@@ -169,6 +181,8 @@ export default function DamageCalculator() {
   const [ocrState, setOcrState] = useState({ status: "idle", progress: 0, message: "", matches: [] });
   const [ocrSpecialists, setOcrSpecialists] = useState([]);
   const [ocrFairies, setOcrFairies] = useState([]);
+  const [ocrCharacter, setOcrCharacter] = useState(null);
+  const [equipmentUpgrades, setEquipmentUpgrades] = useState({ main: 0, secondary: 0, armor: 0 });
   const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
   const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
@@ -295,6 +309,7 @@ export default function DamageCalculator() {
     setSpDraft((old) => ({ ...old, [key]: value }));
     if (key === "element") setStats((old) => ({ ...old, elementPower: (profile?.weapon.spElement || 0) + value }));
   };
+  const updateSpArray = (key, index) => (event) => setSpDraft((old) => { const values = [...(old?.[key] || [0, 0, 0, 0])]; values[index] = Number(event.target.value); return { ...(old || {}), [key]: values }; });
   const updateFairyDraft = (key) => (event) => {
     const value = Number(event.target.value);
     setFairyDraft((old) => ({ ...old, [key]: value }));
@@ -372,7 +387,7 @@ export default function DamageCalculator() {
       const automaticType = className === "escrimeur" ? (skill.secondary_weapon ? "ranged" : "melee") : className === "archer" ? (skill.secondary_weapon ? "melee" : "ranged") : className === "mage" ? (skill.secondary_weapon ? "ranged" : "magic") : "melee";
       const attackType = skill.id ? stats.attackType : automaticType;
       const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType];
-      setStats((old) => ({ ...old, skillPower: skill.power || 0, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence }));
+      setStats((old) => ({ ...old, skillPower: skill.power || 0, attackType, weaponUpgrade: skill.secondary_weapon ? (equipmentUpgrades.secondary || old.weaponUpgrade) : (equipmentUpgrades.main || old.weaponUpgrade), defence: currentMonster?.defence?.[defenceKey] ?? old.defence }));
     }
   };
   const selectSpecialistCard = (value) => {
@@ -529,6 +544,9 @@ export default function DamageCalculator() {
       const detectedClass = ["escrimeur", "archer", "mage", "aventurier"].find((name) => new RegExp(`(?:^| )${name}(?: |$)`).test(header));
       const detectedMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[detectedClass] || classMask;
       if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
+      const nickname = data.text.trim().split(/\s+/)[0]?.replace(/[^\p{L}\p{N}_-]/gu, "");
+      const headerValues = (header.match(/\b\d{1,3}\b/g) || []).map(Number).slice(-3);
+      if (nickname || headerValues.length === 3) { const character = { nickname: nickname || "", level: headerValues[0] || stats.level, jobLevel: headerValues[1] || stats.jobLevel, heroLevel: headerValues[2] || stats.heroLevel, className: detectedClass || className }; setOcrCharacter(character); setStats((old) => ({ ...old, level: character.level, jobLevel: character.jobLevel, heroLevel: character.heroLevel })); matches.push(`${character.nickname} · niv. ${character.level}+${character.heroLevel}`); }
       const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
       if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
       const itemMatches = gameData.items.filter((item) => fuzzyIncludes(equipmentSource, item.name)).sort((a, b) => b.name.length - a.name.length);
@@ -536,9 +554,11 @@ export default function DamageCalculator() {
       const secondary = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
       if (main) { setMainWeaponVnum(String(main.vnum)); matches.push(`Arme : ${main.name}`); }
       if (secondary) { setSecondaryWeaponVnum(String(secondary.vnum)); matches.push(`Arme secondaire : ${secondary.name}`); }
-      const mainWindow = main ? equipmentSource.slice(Math.max(0, equipmentSource.indexOf(normalizeText(main.name))), Math.max(0, equipmentSource.indexOf(normalizeText(main.name))) + 500) : equipmentSource;
-      const weaponUpgrade = mainWindow.match(/(?:\+ )?(\d{1,2}) (?:phenomenal|ancestral|utile|bonne)/);
-      if (weaponUpgrade) setStats((old) => ({ ...old, weaponUpgrade: Math.min(13, Number(weaponUpgrade[1])) }));
+      const itemWindow = (item, length = 650) => { const name = normalizeText(item?.name || ""); const start = equipmentSource.indexOf(name); return start >= 0 ? equipmentSource.slice(start, start + length) : ""; };
+      const upgradeFrom = (item) => Number(itemWindow(item).match(/(?:\+ )?(\d{1,2}) (?:phenomenal|ancestral|utile|bonne|mystique)/)?.[1] || 0);
+      const armor = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 1 && item.class_id === detectedMask);
+      const upgrades = { main: upgradeFrom(main), secondary: upgradeFrom(secondary), armor: upgradeFrom(armor) }; setEquipmentUpgrades(upgrades);
+      if (upgrades.main) setStats((old) => ({ ...old, weaponUpgrade: Math.min(13, upgrades.main) }));
       const monsterRune = equipmentSource.match(/degats augmentes sur les monstres (\d{1,3})/);
       const criticalRune = equipmentSource.match(/probabilite d un coup critique augmente (\d{1,3})/);
       const increasedRune = equipmentSource.match(/les degats augmentent (\d{1,3})/);
@@ -552,10 +572,10 @@ export default function DamageCalculator() {
       });
       if (cards.length) {
         const tesseractModule = await import("tesseract.js"); const createWorker = tesseractModule.createWorker || tesseractModule.default?.createWorker;
-        const numberWorker = await createWorker("eng"); await numberWorker.setParameters({ tessedit_char_whitelist: "0123456789 " });
-        const enriched = [];
-        for (let index = 0; index < cards.length; index += 1) { const crop = await cropOcrImage(file, 0.67, 0.365 + index * 0.0433, 0.31, 0.043); const numeric = await numberWorker.recognize(crop); const values = (numeric.data.text.match(/\d{1,3}/g) || []).map(Number).filter((value) => value <= 150); enriched.push({ ...cards[index], attack: values[0] || 0, defence: values[1] || 0, element: values[2] || 0, hpMp: values[3] || 0, perfectionStats: values.length >= 8 ? values.slice(-4) : [0, 0, 0, 0] }); }
-        await numberWorker.terminate(); cards = enriched;
+        const numberWorker = await createWorker("eng"); await numberWorker.setParameters({ tessedit_char_whitelist: "0123456789 ", tessedit_pageseg_mode: "6", preserve_interword_spaces: "1" });
+        const numericSheet = await prepareSpecialistNumbersImage(file, cards.length); const numeric = await numberWorker.recognize(numericSheet); await numberWorker.terminate();
+        const rows = numeric.data.text.split(/\n/).map((line) => (line.match(/\d{1,3}/g) || []).map(Number).filter((value) => value <= 150)).filter((values) => values.length);
+        cards = cards.map((card, index) => { const improvement = rows[index * 3] || []; const perfectionPoints = rows[index * 3 + 1] || []; const resistances = rows[index * 3 + 2] || []; return { ...card, attack: improvement[0] || 0, defence: improvement[1] || 0, element: improvement[2] || 0, hpMp: improvement[3] || 0, perfectionStats: [perfectionPoints[0] || 0, perfectionPoints[1] || 0, perfectionPoints[2] || 0, perfectionPoints[3] || 0], perfectionResistances: [resistances[0] || 0, resistances[1] || 0, resistances[2] || 0, resistances[3] || 0] }; });
       }
       setOcrSpecialists(cards);
       if (cards[0]) { applyOcrSpecialist(cards[0]); matches.push(`${cards.length} SP reconnue${cards.length > 1 ? "s" : ""}`); }
@@ -565,7 +585,7 @@ export default function DamageCalculator() {
       const costumeMatches = gameData.items.filter((item) => [13, 14, 15, 16, 17].includes(item.equipment_slot) && fuzzyIncludes(costumeSource, item.name)).sort((a, b) => b.name.length - a.name.length);
       costumeMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(item.name); } });
       if (Object.keys(selections).length) setEquipment((old) => ({ ...old, ...selections }));
-      const fairyItems = gameData.items.filter((item) => /fée|fee|drone à vapeur|drone a vapeur/i.test(item.name || "") && fuzzyIncludes(fairySource, item.name)).slice(0, 8).map((item) => { const name = normalizeText(item.name); const start = fairySource.indexOf(name); const window = fairySource.slice(Math.max(0, start), start >= 0 ? start + 300 : 0); const percent = window.match(/(?:\+\s*\d+\s*)?(\d{2,3})\s*%/); return { ...item, percent: Number(percent?.[1] || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : "none" }; });
+      const fairyItems = gameData.items.filter((item) => /fée|fee|drone à vapeur|drone a vapeur/i.test(item.name || "") && fuzzyIncludes(fairySource, item.name)).slice(0, 8).map((item) => { const name = normalizeText(item.name); const start = fairySource.indexOf(name); const nextDrone = fairySource.indexOf("drone a vapeur", start + name.length); const window = fairySource.slice(Math.max(0, start), nextDrone > start ? nextDrone : start + 500); const percent = window.match(/(?:\+\s*\d+\s*)?(\d{2,3})\s*%/); const critical = window.match(/probabilite de coup critique augmente de (\d{1,3})/); const attack = window.match(/toutes les attaques augmentent de (\d{1,3})/); const elementIncrease = window.match(/element de la fee equipee augmente de (\d{1,3})/); return { ...item, percent: Number(percent?.[1] || 0), criticalChance: Number(critical?.[1] || 0), attackPercent: Number(attack?.[1] || 0), elementIncrease: Number(elementIncrease?.[1] || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : "none" }; });
       setOcrFairies(fairyItems); if (fairyItems.length) matches.push(`${fairyItems.length} fées reconnues`);
       const detectedPartners = partnerSpecialists.filter((item) => fuzzyIncludes(companionSource, item.name));
       if (detectedPartners.length) { setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => item.name).join(", ")}`); }
@@ -627,19 +647,13 @@ export default function DamageCalculator() {
           <label className="text-xs font-bold uppercase text-[#a991bd]">Fée<select value={fairyId} onChange={selectFairy} className={fieldClass}>{profile.fairies.map((fairy) => <option key={fairy.id} value={fairy.id}>{fairy.name} · {fairy.percent}%</option>)}</select></label>
         </div>}
         {profile && spDraft && <div className="mt-4">
-          <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points et perfection de la SP — modifiables</div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points de la spécialiste</span><span className="rounded-lg bg-[#2a1938] px-2 py-1 text-[11px] text-[#cdb8dd]">Carte +{spDraft.upgrade || 0} · perfection {spDraft.perfection || 0}</span></div>
+          <div className="rounded-xl border border-[#413052] bg-[#12091d] p-3"><div className="mb-2 text-xs font-black uppercase text-[#dc9cff]">⚔️ Amélioration</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Field label="Attaque" value={spDraft.attack} onChange={updateSpDraft("attack")} />
             <Field label="Défense" value={spDraft.defence} onChange={updateSpDraft("defence")} />
             <Field label="Élément" value={spDraft.element} onChange={updateSpDraft("element")} />
             <Field label="HP/MP" value={spDraft.hpMp} onChange={updateSpDraft("hpMp")} />
-            <Field label="Amélioration" value={spDraft.upgrade} onChange={updateSpDraft("upgrade")} max={20} />
-            <Field label="Perfection" value={spDraft.perfection} onChange={updateSpDraft("perfection")} max={100} />
-            <Field label="Perf. attaque" value={spDraft.perfectionStats?.[0] || 0} onChange={(event) => { const values = [...(spDraft.perfectionStats || [0, 0, 0, 0])]; values[0] = Number(event.target.value); setSpDraft((old) => ({ ...old, perfectionStats: values })); }} />
-            <Field label="Perf. défense" value={spDraft.perfectionStats?.[1] || 0} onChange={(event) => { const values = [...(spDraft.perfectionStats || [0, 0, 0, 0])]; values[1] = Number(event.target.value); setSpDraft((old) => ({ ...old, perfectionStats: values })); }} />
-            <Field label="Perf. élément" value={spDraft.perfectionStats?.[2] || 0} onChange={(event) => { const values = [...(spDraft.perfectionStats || [0, 0, 0, 0])]; values[2] = Number(event.target.value); setSpDraft((old) => ({ ...old, perfectionStats: values })); }} />
-            <Field label="Perf. HP/MP" value={spDraft.perfectionStats?.[3] || 0} onChange={(event) => { const values = [...(spDraft.perfectionStats || [0, 0, 0, 0])]; values[3] = Number(event.target.value); setSpDraft((old) => ({ ...old, perfectionStats: values })); }} />
-          </div>
+          </div></div><div className="mt-3 rounded-xl border border-[#413052] bg-[#12091d] p-3"><div className="mb-2 text-xs font-black uppercase text-[#72d8ff]">✨ Perfectionnement</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Field label="Attaque" value={spDraft.perfectionStats?.[0] || 0} onChange={updateSpArray("perfectionStats", 0)} /><Field label="Défense" value={spDraft.perfectionStats?.[1] || 0} onChange={updateSpArray("perfectionStats", 1)} /><Field label="Élément" value={spDraft.perfectionStats?.[2] || 0} onChange={updateSpArray("perfectionStats", 2)} /><Field label="HP/MP" value={spDraft.perfectionStats?.[3] || 0} onChange={updateSpArray("perfectionStats", 3)} /><Field label="🔥 Rés. feu" value={spDraft.perfectionResistances?.[0] || 0} onChange={updateSpArray("perfectionResistances", 0)} /><Field label="💧 Rés. eau" value={spDraft.perfectionResistances?.[1] || 0} onChange={updateSpArray("perfectionResistances", 1)} /><Field label="☀️ Rés. lumière" value={spDraft.perfectionResistances?.[2] || 0} onChange={updateSpArray("perfectionResistances", 2)} /><Field label="🌙 Rés. obscurité" value={spDraft.perfectionResistances?.[3] || 0} onChange={updateSpArray("perfectionResistances", 3)} /></div></div>
         </div>}
         {profile && fairyDraft && <div className="mt-4">
           <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Options de la fée — modifiables</div>
@@ -700,11 +714,13 @@ export default function DamageCalculator() {
         <div className="space-y-5">
           <Section icon="🏹" title="Personnage">
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{["aventurier", "escrimeur", "archer", "mage"].map((name) => <button type="button" key={name} onClick={() => { setClassName(name); setSpecialistCardVnum(""); setSkillId("basic"); }} className={`rounded-xl border p-2 capitalize transition ${className === name ? "border-[#a66ed1] bg-[#4a2868] text-white" : "border-[#3b2852] bg-[#12091d] text-[#aa95ba] hover:border-[#745090]"}`}><img src={`${import.meta.env.BASE_URL}classes/${name}.png`} alt="" className="mx-auto mb-1 h-9 w-9 object-contain" />{name}</button>)}</div>
-            <div className="grid gap-3 sm:grid-cols-3"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Attaque min." value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque max." value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
+            {ocrCharacter && <div className="mb-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-300">✓ {ocrCharacter.nickname} · {ocrCharacter.className} · niveau {ocrCharacter.level} · métier {ocrCharacter.jobLevel} · héros {ocrCharacter.heroLevel}</div>}
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Niveau métier" value={stats.jobLevel} onChange={number(setStats, "jobLevel")} max={100} /><Field label="Niveau héroïque" value={stats.heroLevel} onChange={number(setStats, "heroLevel")} max={99} /><Field label="Attaque min." value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque max." value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
             {gameData.items.length > 0 && <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[0]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedMainWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={mainWeaponVnum} onChange={(event) => setMainWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{mainWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedSecondaryWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
             </div>}
+            {(equipmentUpgrades.main || equipmentUpgrades.secondary || equipmentUpgrades.armor) > 0 && <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded-lg bg-[#2a1938] px-2 py-1">Arme principale +{equipmentUpgrades.main}</span><span className="rounded-lg bg-[#2a1938] px-2 py-1">Arme secondaire +{equipmentUpgrades.secondary}</span><span className="rounded-lg bg-[#2a1938] px-2 py-1">Armure +{equipmentUpgrades.armor}</span></div>}
             <div className="mt-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3">
               <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Bijoux</div>
               <div className="mt-3 grid gap-3 sm:grid-cols-3"><EquipmentPicker label="Collier" items={jewellery.necklace} value={equipment.necklace} onChange={(value) => setEquipment((old) => ({ ...old, necklace: value }))} /><EquipmentPicker label="Anneau" items={jewellery.ring} value={equipment.ring} onChange={(value) => setEquipment((old) => ({ ...old, ring: value }))} /><EquipmentPicker label="Bracelet" items={jewellery.bracelet} value={equipment.bracelet} onChange={(value) => setEquipment((old) => ({ ...old, bracelet: value }))} /></div>
@@ -716,7 +732,7 @@ export default function DamageCalculator() {
             <div className="mb-4"><EquipmentPicker label="Carte de spécialiste" items={specialistCards} value={specialistCardVnum} onChange={selectSpecialistCard} /></div>
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Compétence de la SP<select value={skillId} onChange={selectSkill} className={fieldClass}><option value="basic">⚔️ Attaque de base</option>{offensiveSkills.map((skill) => <option key={skill.vnum} value={skill.vnum}>{skill.name}{skill.secondary_weapon ? " · arme secondaire" : " · arme principale"}</option>)}</select></label>
             {selectedSkill && <div className="mb-3 rounded-xl border border-[#48315f] bg-[#12091d] px-3 py-2 text-xs text-[#cdb8dd]"><strong className="text-[#e8d8f4]">{selectedSkill.name}</strong> · puissance automatique : <span className="font-black text-emerald-300">{Number(selectedSkill.power || 0).toLocaleString("fr-FR")}</span> · {selectedSkill.secondary_weapon ? "arme secondaire" : "arme principale"}</div>}
-            {selectedSpecialistCard && <div className="mb-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points de la spécialiste</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"><Field label="Attaque" value={spDraft?.attack || 0} onChange={updateSpDraft("attack")} /><Field label="Défense" value={spDraft?.defence || 0} onChange={updateSpDraft("defence")} /><Field label="Élément" value={spDraft?.element || 0} onChange={updateSpDraft("element")} /><Field label="HP/MP" value={spDraft?.hpMp || 0} onChange={updateSpDraft("hpMp")} /><Field label="Amélioration" value={spDraft?.upgrade || 0} onChange={updateSpDraft("upgrade")} max={20} /><Field label="Perfectionnement" value={spDraft?.perfection || 0} onChange={updateSpDraft("perfection")} max={100} /></div></div>}
+            {selectedSpecialistCard && <div className="mb-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3"><div className="mb-3 flex items-center justify-between gap-2"><span className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points de la spécialiste</span><span className="rounded-lg bg-[#2a1938] px-2 py-1 text-[10px] text-[#cdb8dd]">+{spDraft?.upgrade || 0} · perfection {spDraft?.perfection || 0}</span></div><div className="rounded-lg border border-[#39284a] p-3"><div className="mb-2 text-xs font-black uppercase text-[#dc9cff]">⚔️ Amélioration</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Field label="Attaque" value={spDraft?.attack || 0} onChange={updateSpDraft("attack")} /><Field label="Défense" value={spDraft?.defence || 0} onChange={updateSpDraft("defence")} /><Field label="Élément" value={spDraft?.element || 0} onChange={updateSpDraft("element")} /><Field label="HP/MP" value={spDraft?.hpMp || 0} onChange={updateSpDraft("hpMp")} /></div></div><div className="mt-3 rounded-lg border border-[#39284a] p-3"><div className="mb-2 text-xs font-black uppercase text-[#72d8ff]">✨ Perfectionnement</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Field label="Attaque" value={spDraft?.perfectionStats?.[0] || 0} onChange={updateSpArray("perfectionStats", 0)} /><Field label="Défense" value={spDraft?.perfectionStats?.[1] || 0} onChange={updateSpArray("perfectionStats", 1)} /><Field label="Élément" value={spDraft?.perfectionStats?.[2] || 0} onChange={updateSpArray("perfectionStats", 2)} /><Field label="HP/MP" value={spDraft?.perfectionStats?.[3] || 0} onChange={updateSpArray("perfectionStats", 3)} /><Field label="🔥 Rés. feu" value={spDraft?.perfectionResistances?.[0] || 0} onChange={updateSpArray("perfectionResistances", 0)} /><Field label="💧 Rés. eau" value={spDraft?.perfectionResistances?.[1] || 0} onChange={updateSpArray("perfectionResistances", 1)} /><Field label="☀️ Rés. lumière" value={spDraft?.perfectionResistances?.[2] || 0} onChange={updateSpArray("perfectionResistances", 2)} /><Field label="🌙 Rés. obscurité" value={spDraft?.perfectionResistances?.[3] || 0} onChange={updateSpArray("perfectionResistances", 3)} /></div></div></div>}
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Type d’attaque utilisé<select value={stats.attackType} onChange={(event) => { const attackType = event.target.value; const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType]; setStats((old) => ({ ...old, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence })); }} className={fieldClass}><option value="melee">⚔️ Corps à corps</option><option value="ranged">🏹 Attaque à distance</option><option value="magic">🔮 Attaque magique</option></select><span className="mt-1 block text-[11px] font-normal normal-case text-[#806d90]">Déterminé automatiquement par la compétence, mais modifiable pour les SP utilisant l’arme secondaire.</span></label>
             <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Effets de rune et options cumulés — modifiables</div>
             <div className="grid gap-3 sm:grid-cols-3"><Field label="Attaque fixe" value={stats.flatAttack} onChange={number(setStats, "flatAttack")} /><Field label="Amélioration arme" value={stats.weaponUpgrade} onChange={number(setStats, "weaponUpgrade")} suffix={`+${result.upgradePercent}%`} max={13} /><Field label="Toutes attaques" value={stats.attackPercent} onChange={number(setStats, "attackPercent")} suffix="%" min={-100} /></div>
@@ -787,7 +803,7 @@ export default function DamageCalculator() {
               {ocrState.message && <p className={`mt-3 text-xs ${ocrState.status === "error" ? "text-rose-300" : ocrState.status === "done" ? "text-emerald-300" : "text-[#bda5cf]"}`}>{ocrState.message}</p>}
               {!!ocrState.matches.length && <div className="mt-3 flex flex-wrap justify-center gap-2">{ocrState.matches.map((match) => <span key={match} className="rounded-lg border border-[#49315d] bg-[#1c1028] px-2 py-1 text-[11px] text-[#d7c4e5]">✓ {match}</span>)}</div>}
               {!!ocrSpecialists.length && <div className="mt-4 border-t border-[#39254d] pt-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Spécialistes reconnues</div><div className="flex flex-wrap justify-center gap-2">{ocrSpecialists.map((card) => <button type="button" key={card.vnum} onClick={() => applyOcrSpecialist(card)} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs ${specialistCardVnum === String(card.vnum) ? "border-[#bd82e8] bg-[#4e2a6c] text-white" : "border-[#49315d] bg-[#1c1028] text-[#d7c4e5]"}`}><GameIcon src={card.icon_url} className="h-8 w-8 object-contain" /><span><strong className="block">{cleanSpecialistName(card.name)}</strong><span className="text-[10px] text-[#a991bd]">+{card.upgrade} · perfection {card.perfection} · {card.attack}/{card.defence}/{card.element}/{card.hpMp}</span></span></button>)}</div></div>}
-              {!!ocrFairies.length && <div className="mt-4 border-t border-[#39254d] pt-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Fées reconnues</div><div className="flex flex-wrap justify-center gap-2">{ocrFairies.map((fairy) => <button type="button" key={fairy.vnum} onClick={() => { setFairyDraft(fairy); setStats((old) => ({ ...old, attackElement: fairy.element, fairyElement: fairy.percent || old.fairyElement })); }} className="flex items-center gap-2 rounded-lg border border-[#49315d] bg-[#1c1028] px-2 py-1.5 text-left text-xs text-[#d7c4e5]"><GameIcon src={fairy.icon_url} className="h-8 w-8 object-contain" /><span><strong className="block">{fairy.name}</strong><span className="text-[10px] text-[#a991bd]">{fairy.percent || "?"}% · cliquer pour utiliser</span></span></button>)}</div></div>}
+              {!!ocrFairies.length && <div className="mt-4 border-t border-[#39254d] pt-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Fées reconnues</div><div className="flex flex-wrap justify-center gap-2">{ocrFairies.map((fairy) => <button type="button" key={fairy.vnum} onClick={() => { setFairyDraft(fairy); setStats((old) => ({ ...old, attackElement: fairy.element, fairyElement: fairy.percent || old.fairyElement, attackPercent: Number(profile?.weapon?.attackPercent || 0) + fairy.attackPercent, criticalChance: Math.min(100, Number(profile?.combat?.criticalChance || 0) + fairy.criticalChance), elementPower: Number(profile?.weapon?.spElement || 0) + Number(spDraft?.element || 0) + fairy.elementIncrease })); }} className="flex items-center gap-2 rounded-lg border border-[#49315d] bg-[#1c1028] px-2 py-1.5 text-left text-xs text-[#d7c4e5]"><GameIcon src={fairy.icon_url} className="h-8 w-8 object-contain" /><span><strong className="block">{fairy.name}</strong><span className="text-[10px] text-[#a991bd]">{fairy.percent || "?"}% · ATQ +{fairy.attackPercent}% · CRIT +{fairy.criticalChance}% · élément +{fairy.elementIncrease}</span></span></button>)}</div></div>}
             </div>
           </Section>
         </div>
