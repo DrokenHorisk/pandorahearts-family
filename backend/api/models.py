@@ -21,7 +21,7 @@ class Member(Base):
     __tablename__ = "members"
 
     player_id = Column(BigInteger, primary_key=True)
-    account_id = Column(BigInteger, nullable=False)
+    account_id = Column(BigInteger, nullable=True)
     nickname = Column(String(64), nullable=False)
     level = Column(Integer, nullable=False)
     class_id = Column(Integer, nullable=False)
