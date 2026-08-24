@@ -618,11 +618,15 @@ export default function DamageCalculator() {
       const costumeSource = between(source, "costumes", "familiers");
       const companionSource = between(source, "familiers", "livres");
       const bookSource = source.includes("livres") ? source.slice(source.indexOf("livres")) : "";
-      const header = source.slice(0, Math.min(400, source.indexOf("equipements") > 0 ? source.indexOf("equipements") : 400));
+      const identityRaw = [...(ocrResult.identity_texts || []), data.text].join("\n");
+      const identitySource = normalizeText(identityRaw);
+      const header = identitySource.slice(0, Math.min(600, identitySource.indexOf("equipements") > 0 ? identitySource.indexOf("equipements") : 600));
       const detectedClass = ["escrimeur", "archer", "mage", "aventurier"].find((name) => new RegExp(`(?:^| )${name}(?: |$)`).test(header));
       const detectedMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[detectedClass] || classMask;
       if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
-      const nickname = data.text.trim().split(/\s+/)[0]?.replace(/[^\p{L}\p{N}_-]/gu, "");
+      const identityCandidates = identityRaw.split(/\n/).map((line) => line.trim().replace(/^[^\p{L}\p{N}+_-]+/gu, "").replace(/[^\p{L}\p{N}+_-]+$/gu, "")).filter((line) => line.length >= 3 && !/(mage|archer|escrimeur|aventurier|undercity|equipements|niveau|metier|heros)/i.test(line));
+      const compactUploadName = normalizedUploadName.replace(/\s+/g, "");
+      const nickname = identityCandidates.find((candidate) => { const compact = normalizeText(candidate).replace(/\s+/g, ""); return compact.length >= 3 && (compactUploadName.includes(compact) || compact.includes(compactUploadName.replace(/fiche|perso|png|jpg|jpeg|webp|\d+/g, ""))); }) || identityCandidates[0] || "";
       const isDrokenSheet = normalizeText(header).includes("drokena") || normalizeText(nickname) === "drokena";
       const headerValues = Array.isArray(ocrResult.header_numbers) && ocrResult.header_numbers.length === 3
         ? ocrResult.header_numbers.map(Number)
