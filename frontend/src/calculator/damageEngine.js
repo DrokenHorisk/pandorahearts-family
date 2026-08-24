@@ -35,7 +35,10 @@ export function calculateDamage(input) {
   const effectiveDefence = defence * (1 + defenceUpgradePercent / 100) * (1 - defenceReduction / 100);
   const baseMultiplier = (1 + attackPercent / 100) * (1 + monsterDamage / 100) * (1 + buffDamage / 100) * (1 + debuffDamage / 100);
 
-  const physical = (attack) => Math.max(1, (attack + upgradeAttack + flatAttack + runicAttack + skillPower - effectiveDefence) * baseMultiplier);
+  // Les bonus d'attaque renforcent l'attaque avant la soustraction de la
+  // défense. L'ancien ordre annulait tous les buffs dès que la défense brute
+  // du monstre dépassait l'attaque et produisait artificiellement 1 dégât.
+  const physical = (attack) => Math.max(1, (attack + upgradeAttack + flatAttack + runicAttack + skillPower) * baseMultiplier - effectiveDefence);
   const physicalMin = physical(attackMin);
   const physicalMax = physical(attackMax);
 
