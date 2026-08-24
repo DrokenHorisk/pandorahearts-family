@@ -149,7 +149,7 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
     text = result.stdout.decode("utf-8", errors="replace")
     header_numbers = []
     identity_texts = []
-    regions = {"equipment": {}}
+    regions = {"equipment": {}, "accessories": {}}
     header_text = ""
     try:
         image = Image.open(io.BytesIO(payload))
@@ -194,6 +194,29 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
                 input=crop_output.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25, check=False,
             )
             regions["equipment"][slot] = crop_result.stdout.decode("utf-8", errors="replace")
+
+        accessory_boxes = {
+            "necklace": (0.015, 0.172, 0.335, 0.216),
+            "ring": (0.332, 0.172, 0.665, 0.216),
+            "bracelet": (0.662, 0.172, 0.985, 0.216),
+            "gloves": (0.015, 0.210, 0.335, 0.254),
+            "boots": (0.332, 0.210, 0.665, 0.254),
+            "mask": (0.662, 0.210, 0.985, 0.254),
+            "hat": (0.015, 0.247, 0.335, 0.292),
+        }
+        for slot, (left, top, right, bottom) in accessory_boxes.items():
+            crop = image.crop((
+                int(image.width * left), int(image.height * top),
+                int(image.width * right), int(image.height * bottom),
+            ))
+            crop = crop.resize((crop.width * 4, crop.height * 4), Image.Resampling.LANCZOS)
+            crop_output = io.BytesIO()
+            crop.save(crop_output, format="PNG")
+            crop_result = subprocess.run(
+                ["tesseract", "stdin", "stdout", "-l", "fra", "--psm", "6"],
+                input=crop_output.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False,
+            )
+            regions["accessories"][slot] = crop_result.stdout.decode("utf-8", errors="replace")
     except Exception:
         header_numbers = []
         identity_texts = []
