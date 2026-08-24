@@ -38,6 +38,7 @@ def _summary(row):
         "data": payload.get("Data"),
         "pet_info": payload.get("PetInfo"),
         "is_partner": payload.get("IsValhallaPartner"),
+        "monster_cards": (payload.get("Basics") or []) + (payload.get("Cards") or []),
         "cooldown": payload.get("Cooldown"),
         "range": payload.get("Range"),
         "effect_type": payload.get("Type"),
