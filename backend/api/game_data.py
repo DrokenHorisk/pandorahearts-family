@@ -1,3 +1,8 @@
+import html
+import re
+from functools import lru_cache
+from urllib.request import Request, urlopen
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -9,6 +14,47 @@ from .noswiki import BASE_URL, SOURCES, sync_all
 
 
 router = APIRouter(prefix="/game-data", tags=["game-data"])
+
+PARTNER_RANKS = ("F", "E", "D", "C", "B", "A", "S")
+
+
+def _plain_text(value: str):
+    value = re.sub(r"<img[^>]*>", "", value, flags=re.I)
+    value = re.sub(r"<[^>]+>", "", value)
+    return re.sub(r"\s+", " ", html.unescape(value)).strip(" .\n\t")
+
+
+@lru_cache(maxsize=256)
+def _partner_specialist(vnum: int):
+    request = Request(
+        f"https://nosapki.com/fr/items/{vnum}",
+        headers={"User-Agent": "PandoraHearts/1.0"},
+    )
+    with urlopen(request, timeout=30) as response:
+        document = response.read().decode("utf-8", errors="replace")
+
+    # Chaque fiche contient 3 compétences, chacune déclinée dans les 7 rangs.
+    chunks = re.split(r'<div class="partner_skill_einfo"', document)[1:]
+    ranks = {rank: [] for rank in PARTNER_RANKS}
+    for chunk in chunks:
+        level_match = re.search(r'data-skill-level="([0-6])"', chunk)
+        name_match = re.search(r"<p class=['\"]name['\"]>(.*?)</p>", chunk, re.S)
+        if not level_match or not name_match:
+            continue
+        level = int(level_match.group(1))
+        icon_match = re.search(r"<img class=['\"]icon['\"] src=['\"]([^'\"]+)", chunk)
+        bonus_match = re.search(r"<div class=['\"]bonus['\"]>(.*?)</div>", chunk, re.S)
+        effects = []
+        if bonus_match:
+            effects = [_plain_text(value) for value in re.findall(r"<p>(.*?)</p>", bonus_match.group(1), re.S)]
+        ranks[PARTNER_RANKS[level]].append({
+            "name": _plain_text(name_match.group(1)),
+            "icon_url": f"https://nosapki.com{icon_match.group(1)}" if icon_match and icon_match.group(1).startswith("/") else (icon_match.group(1) if icon_match else None),
+            "effects": [value for value in effects if value],
+        })
+    if not any(ranks.values()):
+        raise ValueError("No partner skills found")
+    return {"vnum": vnum, "ranks": ranks}
 
 
 def _summary(row):
@@ -64,6 +110,14 @@ def synchronize(
     _user=Depends(require_roles("superadmin")),
 ):
     return {"ok": True, "counts": sync_all(db)}
+
+
+@router.get("/partner-specialists/{vnum}")
+def partner_specialist(vnum: int):
+    try:
+        return _partner_specialist(vnum)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Partner specialist data unavailable") from exc
 
 
 @router.get("/{kind}")
