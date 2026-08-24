@@ -47,7 +47,10 @@ function Shell() {
   </div>;
 }
 
-export default function App() { return <BrowserRouter><Shell /></BrowserRouter>; }
+export default function App() {
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+  return <BrowserRouter basename={basename}><Shell /></BrowserRouter>;
+}
 
 function TabButton({ active, children, ...props }) {
   return <button {...props} className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${active ? "bg-purple-500/20 text-purple-200 border border-purple-500/40" : "bg-slate-900 text-slate-400 hover:text-slate-200"}`}>{children}</button>;
