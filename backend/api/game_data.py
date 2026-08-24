@@ -196,13 +196,13 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
             regions["equipment"][slot] = crop_result.stdout.decode("utf-8", errors="replace")
 
         accessory_boxes = {
-            "necklace": (0.015, 0.172, 0.335, 0.216),
-            "ring": (0.332, 0.172, 0.665, 0.216),
-            "bracelet": (0.662, 0.172, 0.985, 0.216),
-            "gloves": (0.015, 0.210, 0.335, 0.254),
-            "boots": (0.332, 0.210, 0.665, 0.254),
-            "mask": (0.662, 0.210, 0.985, 0.254),
-            "hat": (0.015, 0.247, 0.335, 0.292),
+            "necklace": (0.005, 0.172, 0.365, 0.216),
+            "ring": (0.300, 0.172, 0.700, 0.216),
+            "bracelet": (0.600, 0.172, 0.995, 0.216),
+            "gloves": (0.005, 0.210, 0.365, 0.254),
+            "boots": (0.300, 0.210, 0.700, 0.254),
+            "mask": (0.600, 0.210, 0.995, 0.254),
+            "hat": (0.005, 0.247, 0.365, 0.292),
         }
         for slot, (left, top, right, bottom) in accessory_boxes.items():
             crop = image.crop((
