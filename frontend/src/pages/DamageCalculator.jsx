@@ -221,7 +221,8 @@ export default function DamageCalculator() {
     setSpecialistId(specialist.id);
     setFairyId(fairy.id);
     setSpDraft({ ...specialist });
-    setFairyDraft({ ...fairy });
+    const fairyVnum = Number(fairy.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[fairy.element]) || 0);
+    setFairyDraft({ ...fairy, vnum: fairyVnum });
     setRuneDraft({ ...loadedProfile.weapon });
     setEquipmentUpgrades({ main: Number(loadedProfile.weapon.upgrade || 0), secondary: Number(loadedProfile.secondaryWeapon?.upgrade || 0), armor: Number(loadedProfile.equipmentUpgrades?.armor || 0) });
     setClassName((loadedProfile.character.className || "archer").toLowerCase());
@@ -315,7 +316,7 @@ export default function DamageCalculator() {
     const fairy = profile.fairies.find((item) => item.id === event.target.value);
     if (!fairy) return;
     setFairyId(fairy.id);
-    setFairyDraft({ ...fairy });
+    setFairyDraft({ ...fairy, vnum: Number(fairy.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[fairy.element]) || 0) });
     setStats((old) => ({
       ...old,
       attackElement: fairy.element,
@@ -327,12 +328,14 @@ export default function DamageCalculator() {
   const updateSpDraft = (key) => (event) => {
     const value = Number(event.target.value);
     setSpDraft((old) => ({ ...old, [key]: value }));
+    setProfile((old) => old ? ({ ...old, specialists: old.specialists.map((specialist) => specialist.id === specialistId ? { ...specialist, [key]: value } : specialist) }) : old);
     if (key === "element") setStats((old) => ({ ...old, elementPower: (profile?.weapon.spElement || 0) + value }));
   };
-  const updateSpArray = (key, index) => (event) => setSpDraft((old) => { const values = [...(old?.[key] || [0, 0, 0, 0])]; values[index] = Number(event.target.value); return { ...(old || {}), [key]: values }; });
+  const updateSpArray = (key, index) => (event) => { const value = Number(event.target.value); setSpDraft((old) => { const values = [...(old?.[key] || [0, 0, 0, 0])]; values[index] = value; return { ...(old || {}), [key]: values }; }); setProfile((old) => old ? ({ ...old, specialists: old.specialists.map((specialist) => { if (specialist.id !== specialistId) return specialist; const values = [...(specialist[key] || [0, 0, 0, 0])]; values[index] = value; return { ...specialist, [key]: values }; }) }) : old); };
   const updateFairyDraft = (key) => (event) => {
     const value = Number(event.target.value);
     setFairyDraft((old) => ({ ...old, [key]: value }));
+    setProfile((old) => old ? ({ ...old, fairies: old.fairies.map((fairy) => fairy.id === fairyId ? { ...fairy, [key]: value } : fairy) }) : old);
     if (key === "percent") setStats((old) => ({ ...old, fairyElement: value }));
     if (key === "attackPercent") setStats((old) => ({ ...old, attackPercent: (profile?.weapon.attackPercent || 0) + value }));
     if (key === "criticalChance") setStats((old) => ({ ...old, criticalChance: Math.min(100, (profile?.combat.criticalChance || 0) + value) }));
@@ -367,7 +370,7 @@ export default function DamageCalculator() {
   };
   const saveCurrentConfiguration = async () => {
     if (!profile || !getToken()) return;
-    const savedFairy = fairyDraft ? { id: fairyDraft.id || fairyId || "custom-fairy", name: fairyDraft.name || "Fée personnalisée", vnum: Number(fairyDraft.vnum || 0), element: fairyDraft.element || stats.attackElement, percent: Number(fairyDraft.percent || 0), attackPercent: Number(fairyDraft.attackPercent || 0), criticalChance: Number(fairyDraft.criticalChance || 0), elementIncrease: Number(fairyDraft.elementIncrease || 0) } : null;
+    const savedFairy = fairyDraft ? { id: fairyDraft.id || fairyId || "custom-fairy", name: fairyDraft.name || "Fée personnalisée", vnum: Number(fairyDraft.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[fairyDraft.element]) || 0), element: fairyDraft.element || stats.attackElement, percent: Number(fairyDraft.percent || 0), attackPercent: Number(fairyDraft.attackPercent || 0), criticalChance: Number(fairyDraft.criticalChance || 0), elementIncrease: Number(fairyDraft.elementIncrease || 0) } : null;
     const updated = {
       ...profile,
       combat: { ...profile.combat, attackMin: stats.attackMin, attackMax: stats.attackMax, criticalChance: stats.criticalChance, criticalDamage: stats.criticalDamage },
@@ -554,7 +557,7 @@ export default function DamageCalculator() {
       setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
       setEquipmentUpgrades({ main: 9, secondary: 0, armor: 8 });
       setEquipment((old) => ({ ...old, necklace: "8856", ring: "8853", bracelet: "8850", gloves: "8844", boots: "8846", mask: "8894", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" }));
-      setPetIds(["1491"]); setPartnerIds(["8877"]); setPartnerRanks((old) => ({ ...old, 8877: "S" }));
+      setPetIds(["1693", "1493"]); setPartnerIds(["8877"]); setPartnerRanks((old) => ({ ...old, 8877: "S" }));
       setStats((old) => ({ ...old, weaponUpgrade: 9 }));
     }
     const profileSpecialist = profile.specialists.find((item) => item.id === specialistId) || profile.specialists[0];
@@ -650,7 +653,7 @@ export default function DamageCalculator() {
       if (detectedPartners.length) { const ranks = {}; detectedPartners.forEach((item) => { const start = companionSource.indexOf(normalizeText(item.name)); ranks[String(item.vnum)] = (companionSource.slice(start, start + 160).match(/note\s*([f-s])/i)?.[1] || "S").toUpperCase(); }); setPartnerRanks((old) => ({ ...old, ...ranks })); setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => `${item.name} (rang ${ranks[String(item.vnum)]})`).join(", ")}`); }
       const partnerNames = detectedPartners.map((item) => normalizeText(item.name));
       const detectedPets = pets.filter((item) => item.name && !/^not\s*use$/i.test(item.name.trim()) && !partnerNames.includes(normalizeText(item.name)) && companionSource.includes(normalizeText(item.name))).slice(0, 8);
-      if (isDroken || normalizeText(nickname) === "drokena") { setPetIds(["1491"]); matches.push("Familier : Par"); }
+      if (isDroken || normalizeText(nickname) === "drokena") { setPetIds(["1693", "1493"]); matches.push("Familiers : Lumi, Pur"); }
       else if (detectedPets.length) { setPetIds(detectedPets.map((item) => String(item.vnum))); matches.push(`Familiers : ${detectedPets.map((item) => item.name).join(", ")}`); }
       const detectedBooks = bookItems.filter((item) => fuzzyIncludes(bookSource, item.name));
       if (detectedBooks.length) { setCharacterPassiveIds(detectedBooks.map((item) => String(item.vnum))); matches.push(`${detectedBooks.length} livres reconnus`); }
