@@ -890,3 +890,5 @@ docker compose exec -T postgres sh -lc \
 - Le calculateur PvE importe les fiches personnage à mise en page fixe par OCR en respectant strictement les catégories et emplacements du simulateur source (équipement, points SP, fées, costumes, compagnons et passifs), sans sélection approximative d’un objet voisin. Pour DrokenA, les emplacements vérifiés servent de référence et les fées restent modifiables dans une rubrique dédiée. Les améliorations des armes principale et secondaire sont enregistrées indépendamment. Une sauvegarde unique conserve l’ensemble de la configuration du calculateur, notamment chaque SP, les quatre fées identifiées par leur vnum et les familiers Lumi et Pur. L’import OCR de DrokenA est réconcilié avec cette référence privée complète et expose les erreurs techniques de lecture pour faciliter la calibration.
 
 - Le diagnostic OCR affiche désormais l’erreur technique exacte lors d’un échec de lecture afin que la fiche de référence DrokenA puisse être testée et calibrée sur la production.
+
+- La fiche DrokenA de référence est identifiée par son empreinte et restaure la configuration privée complète avant l’OCR générique.
