@@ -86,6 +86,7 @@ export default function DamageCalculator() {
   const [tattooLevels, setTattooLevels] = useState({});
   const [partnerIds, setPartnerIds] = useState([]);
   const [partnerRanks, setPartnerRanks] = useState({});
+  const [partnerData, setPartnerData] = useState({});
   const [petIds, setPetIds] = useState([]);
   const [petRanks, setPetRanks] = useState({});
   const [characterPassiveIds, setCharacterPassiveIds] = useState([]);
@@ -284,28 +285,31 @@ export default function DamageCalculator() {
   const targetDebuffs = gameData.buffs.filter((item) => item.buff_type === 2);
   const selectedDebuffs = targetDebuffs.filter((item) => debuffIds.includes(String(item.vnum)));
   const tattooSkills = gameData.skills.filter((item) => item.class_id === 27);
-  const partnerSkills = gameData.skills.filter((item) => item.class_id >= 32);
   const partnerSpecialists = [...gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 4 && item.equipment_slot === 12).reduce((map, item) => {
     const normalized = (item.name || "").replace(/\s*\(Limité\)$/i, "").trim();
     if (!map.has(normalized) || /\(Limité\)$/i.test(map.get(normalized).name || "")) map.set(normalized, { ...item, name: normalized });
     return map;
   }, new Map()).values()];
   const pets = gameData.monsters.filter((item) => item.is_partner || Object.values(item.pet_info || {}).some((value) => Number(value) !== 0));
-  const rankToLevel = { F: 1, E: 2, D: 3, C: 4, B: 5, A: 6, S: 7 };
   const partnerDetails = (item, rank = "S") => {
-    const partnerClass = 30 + Number(item.data?.[1] || 0);
-    const suffix = `+${rankToLevel[rank] || 7}`;
-    const rankedSkills = partnerSkills.filter((skill) => skill.class_id === partnerClass && skill.name?.endsWith(suffix));
-    const names = rankedSkills.map((skill) => skill.name.replace(/\s\+\d+$/, ""));
-    const cardIds = rankedSkills.flatMap((skill) => skill.buffs || []).filter((effect) => effect.Type === 25 && effect.Value2).map((effect) => Math.floor(Math.abs(effect.Value2) / 10));
-    const blessings = gameData.buffs.filter((card) => cardIds.includes(card.vnum)).map((card) => card.name);
-    const detail = [...new Set([...names, ...blessings])].join(" · ");
-    return detail ? `Rang ${rank} · ${detail}` : `Rang ${rank} · compétences liées chargées`;
+    const skills = partnerData[item.vnum]?.ranks?.[rank];
+    if (!skills) return `Rang ${rank} · chargement des compétences…`;
+    const effects = skills.flatMap((skill) => skill.effects || []);
+    return <span><span className="block text-[#d8c3e8]">Rang {rank} · {skills.map((skill) => skill.name.replace(/\s\+\d+$/, "")).join(" · ")}</span>{effects.slice(0, 5).map((effect) => <span key={effect} className="mt-0.5 block text-[10px] text-emerald-300">✓ {effect}</span>)}</span>;
   };
   const petDetails = (item, rank = "S") => {
     const names = (item.monster_cards || []).map((effect) => gameData.effects.find((entry) => entry.vnum === effect.BCardVNUM)?.name).filter(Boolean);
     return names.length ? `Rang ${rank} · ${[...new Set(names)].slice(0, 3).join(" · ")}` : `Rang ${rank} · buff passif du familier`;
   };
+  useEffect(() => {
+    partnerIds.forEach((id) => {
+      if (partnerData[id]) return;
+      fetch(`${API_BASE}/game-data/partner-specialists/${id}`)
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("partner")))
+        .then((data) => setPartnerData((old) => ({ ...old, [id]: data })))
+        .catch(() => setPartnerData((old) => ({ ...old, [id]: { error: true } })));
+    });
+  }, [partnerIds, partnerData]);
   const bookItems = gameData.items.filter((item) => /livre|manuel|guide|mémorial|stratégie|recherche|entraînement|mode d'emploi/i.test(item.name || "")).map((item) => {
     const labels = (item.buffs || []).map((effect) => gameData.effects.find((entry) => entry.vnum === effect.BCardVNUM)?.name).filter(Boolean);
     return { ...item, effect_summary: [...new Set(labels)].slice(0, 2).join(" · ") };
