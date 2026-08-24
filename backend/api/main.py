@@ -16,9 +16,11 @@ from .importer import import_files
 
 from .auth import authenticate_user, create_access_token, get_current_user, require_roles
 from .calculator import router as calculator_router
+from .game_data import router as game_data_router
 
 app = FastAPI(title="PandoraHearts API")
 app.include_router(calculator_router)
+app.include_router(game_data_router)
 
 app.add_middleware(
     CORSMiddleware,

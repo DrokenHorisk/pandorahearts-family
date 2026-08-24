@@ -103,3 +103,25 @@ class CalculatorProfile(Base):
 
     username = Column(String(64), primary_key=True)
     profile = Column(JSON, nullable=False)
+
+
+class GameDataEntry(Base):
+    __tablename__ = "game_data_entries"
+
+    kind = Column(String(32), primary_key=True)
+    vnum = Column(Integer, primary_key=True)
+    name = Column(String(512), nullable=True, index=True)
+    name_code = Column(String(128), nullable=True)
+    icon_id = Column(Integer, nullable=False, default=0)
+    payload = Column(JSON, nullable=False)
+    source_url = Column(String(512), nullable=False)
+    synced_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GameDataSync(Base):
+    __tablename__ = "game_data_sync"
+
+    kind = Column(String(32), primary_key=True)
+    count = Column(Integer, nullable=False, default=0)
+    source_url = Column(String(512), nullable=False)
+    synced_at = Column(DateTime, nullable=False, default=datetime.utcnow)

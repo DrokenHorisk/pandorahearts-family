@@ -37,9 +37,9 @@ export function calculateDamage(input) {
   const total = (physicalDamage) => Math.max(1, physicalDamage + Math.max(0, physicalDamage * elementMultiplier));
   const normalMin = Math.floor(total(physicalMin));
   const normalMax = Math.floor(total(physicalMax));
-  const critBonus = Math.max(0, Number(input.criticalDamage) || 0);
-  const criticalMin = Math.floor(normalMin * (1.5 + critBonus / 100));
-  const criticalMax = Math.floor(normalMax * (1.5 + critBonus / 100));
+  const criticalRate = Math.max(100, Number(input.criticalDamage) || 150);
+  const criticalMin = Math.floor(normalMin * (criticalRate / 100));
+  const criticalMax = Math.floor(normalMax * (criticalRate / 100));
 
   return {
     normalMin,
