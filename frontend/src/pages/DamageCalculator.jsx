@@ -223,6 +223,7 @@ export default function DamageCalculator() {
     setSpDraft({ ...specialist });
     setFairyDraft({ ...fairy });
     setRuneDraft({ ...loadedProfile.weapon });
+    setEquipmentUpgrades({ main: Number(loadedProfile.weapon.upgrade || 0), secondary: Number(loadedProfile.secondaryWeapon?.upgrade || 0), armor: Number(loadedProfile.equipmentUpgrades?.armor || 0) });
     setClassName((loadedProfile.character.className || "archer").toLowerCase());
     setStats((old) => ({
       ...old,
@@ -350,8 +351,9 @@ export default function DamageCalculator() {
     const updated = {
       ...profile,
       combat: { ...profile.combat, attackMin: stats.attackMin, attackMax: stats.attackMax, criticalChance: stats.criticalChance, criticalDamage: stats.criticalDamage },
-      weapon: { ...profile.weapon, upgrade: stats.weaponUpgrade, vnum: Number(mainWeaponVnum) || profile.weapon.vnum },
-      secondaryWeapon: { ...(profile.secondaryWeapon || {}), vnum: Number(secondaryWeaponVnum) || profile.secondaryWeapon?.vnum },
+      weapon: { ...profile.weapon, upgrade: equipmentUpgrades.main, vnum: Number(mainWeaponVnum) || profile.weapon.vnum },
+      secondaryWeapon: { ...(profile.secondaryWeapon || {}), vnum: Number(secondaryWeaponVnum) || profile.secondaryWeapon?.vnum, upgrade: equipmentUpgrades.secondary },
+      equipmentUpgrades: { armor: equipmentUpgrades.armor },
       equipmentSelections: equipment,
       specialists: profile.specialists.map((specialist) => specialist.id === specialistId ? { ...specialist, ...spDraft, cardVnum: Number(specialistCardVnum) || specialist.cardVnum } : specialist),
     };
@@ -520,6 +522,13 @@ export default function DamageCalculator() {
     setMainWeaponVnum(String(profile.weapon.vnum || ""));
     setSecondaryWeaponVnum(String(profile.secondaryWeapon?.vnum || ""));
     if (profile.equipmentSelections) setEquipment((old) => ({ ...old, ...profile.equipmentSelections }));
+    if (isDroken) {
+      setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
+      setEquipmentUpgrades({ main: 9, secondary: 0, armor: 8 });
+      setEquipment((old) => ({ ...old, necklace: "8856", ring: "8853", bracelet: "8850", gloves: "8844", boots: "8846", mask: "8894", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" }));
+      setPetIds(["1491"]); setPartnerIds(["8877"]); setPartnerRanks((old) => ({ ...old, 8877: "S" }));
+      setStats((old) => ({ ...old, weaponUpgrade: 9 }));
+    }
     const profileSpecialist = profile.specialists.find((item) => item.id === specialistId) || profile.specialists[0];
     const matchingCard = gameData.items.find((item) => item.item_type === 4 && item.item_sub_type === 1 && item.class_id === classMask && cleanSpecialistName(item.name).toLowerCase().includes((profileSpecialist?.name || "").toLowerCase()));
     if (matchingCard) setSpecialistCardVnum(String(matchingCard.vnum));
