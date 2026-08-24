@@ -6,3 +6,16 @@
 
 /* Force le scan de tes fichiers React */
 @source "./**/*.{js,jsx,ts,tsx}";
+
+:root {
+  color-scheme: dark;
+  background: #0f0718;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+  background: #0f0718;
+}
