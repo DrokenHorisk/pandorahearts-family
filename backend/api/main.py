@@ -734,3 +734,107 @@ def update_status(
         "player_id": int(member.player_id),
         "status": normalize_status(getattr(member, "status", None)),
     }
+
+class ManualPlayerCreate(BaseModel):
+    player_id: int
+    nickname: str
+    level: int
+    class_id: Literal[0, 1, 2, 3, 4]
+    role: Literal["Principale", "Secondaire", "Mule"] = "Principale"
+    status: Optional[Literal["actif", "absent", "arret_sans_nouvelle"]] = None
+    main_player_id: Optional[int] = None
+
+
+@app.post("/family/{family}/players")
+def create_player(
+    family: str,
+    payload: ManualPlayerCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "superadmin")),
+):
+    nickname = (payload.nickname or "").strip()
+
+    if not nickname:
+        raise HTTPException(status_code=400, detail="Nickname cannot be empty")
+
+    if len(nickname) > 64:
+        raise HTTPException(status_code=400, detail="Nickname too long (max 64)")
+
+    if payload.level < 1:
+        raise HTTPException(status_code=400, detail="Level must be >= 1")
+
+    # Vérifie player_id unique
+    existing_player = db.get(Member, int(payload.player_id))
+    if existing_player:
+        raise HTTPException(status_code=409, detail="player_id already exists")
+
+    # Vérifie nickname unique
+    existing_nickname = (
+        db.query(Member)
+        .filter(
+            Member.family == family,
+            func.lower(Member.nickname) == func.lower(nickname),
+        )
+        .first()
+    )
+    if existing_nickname:
+        raise HTTPException(status_code=409, detail="Nickname already used in this family")
+
+    role = payload.role
+    main_id = payload.main_player_id
+
+    # Gestion rôle / lien
+    if role == "Principale":
+        main_id = None
+    else:
+        if main_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Secondaire/Mule doit être lié à un principal",
+            )
+
+        if int(main_id) == int(payload.player_id):
+            raise HTTPException(status_code=400, detail="Impossible de se lier à soi-même")
+
+        main_member = (
+            db.query(Member)
+            .filter(Member.family == family, Member.player_id == int(main_id))
+            .first()
+        )
+        if not main_member:
+            raise HTTPException(status_code=404, detail="Principal introuvable")
+
+        if normalize_role(getattr(main_member, "role", None)) != "Principale":
+            raise HTTPException(
+                status_code=409,
+                detail="main_player_id doit pointer vers un Principale",
+            )
+
+    # Création
+    member = Member(
+        player_id=int(payload.player_id),
+        nickname=nickname,
+        level=int(payload.level),
+        class_id=int(payload.class_id),
+        family=family,
+        role=role,
+        status=payload.status,
+        main_player_id=int(main_id) if main_id else None,
+    )
+
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+
+    return {
+        "status": "created",
+        "player": {
+            "player_id": int(member.player_id),
+            "nickname": member.nickname,
+            "level": int(member.level),
+            "class_id": int(member.class_id),
+            "role": normalize_role(member.role),
+            "status": normalize_status(member.status),
+            "main_player_id": member.main_player_id,
+        },
+    }
