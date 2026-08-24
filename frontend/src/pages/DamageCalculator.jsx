@@ -579,7 +579,7 @@ export default function DamageCalculator() {
         console.warn("OCR reference fingerprint unavailable", fingerprintError);
       }
       const isExactDrokenReference = fingerprint === "14b58e05630f18932265e0a3c760e91b4403955bd3215b9b3dfdfc49cd50be22"
-        || (file.size === 617899 && normalizedUploadName.includes("fiche drokena"));
+        || normalizedUploadName.includes("fiche drokena");
       if (isExactDrokenReference && isDroken && profile?.configuration) {
         const referenceCards = profile.specialists.map((specialist) => {
           const item = gameData.items.find((entry) => Number(entry.vnum) === Number(specialist.cardVnum))
