@@ -1,4 +1,5 @@
 import html
+import io
 import json
 import re
 import subprocess
@@ -7,6 +8,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from PIL import Image
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -145,7 +147,21 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
         detail = result.stderr.decode("utf-8", errors="replace").strip()[-500:] or "Tesseract n’a pas pu lire l’image."
         raise HTTPException(status_code=422, detail=detail)
     text = result.stdout.decode("utf-8", errors="replace")
-    return {"text": text, "lines": [line.strip() for line in text.splitlines() if line.strip()]}
+    header_numbers = []
+    try:
+        image = Image.open(io.BytesIO(payload))
+        header = image.crop((int(image.width * 0.68), 0, image.width, int(image.height * 0.07)))
+        header = header.resize((header.width * 4, header.height * 4), Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        header.save(output, format="PNG")
+        header_result = subprocess.run(
+            ["tesseract", "stdin", "stdout", "-l", "eng", "--psm", "6", "-c", "tessedit_char_whitelist=0123456789 "],
+            input=output.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False,
+        )
+        header_numbers = [int(value) for value in re.findall(r"\\b\\d{1,3}\\b", header_result.stdout.decode("utf-8", errors="replace"))][-3:]
+    except Exception:
+        header_numbers = []
+    return {"text": text, "lines": [line.strip() for line in text.splitlines() if line.strip()], "header_numbers": header_numbers}
 
 
 @router.get("/partner-specialists/{vnum}")
