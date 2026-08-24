@@ -29,3 +29,9 @@ test("weapon and monster upgrades are compared before defence", () => {
   assert.equal(defended.defenceUpgradePercent, 43);
   assert.equal(defended.effectiveDefence, 715);
 });
+
+test("act 10 equipment upgrades are supported through +13", () => {
+  const result = calculateDamage({ attackMin: 1000, attackMax: 1000, defence: 0, weaponUpgrade: 13, attackElement: "none", monsterElement: "none" });
+  assert.equal(result.upgradePercent, 300);
+  assert.equal(result.upgradeAttack, 3000);
+});
