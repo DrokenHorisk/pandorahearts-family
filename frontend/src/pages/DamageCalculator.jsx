@@ -63,7 +63,7 @@ export default function DamageCalculator() {
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="space-y-5">
           <Section icon="🏹" title="Personnage">
-            <div className="mb-4 grid grid-cols-4 gap-2">{["aventurier", "escrimeur", "archer", "mage"].map((name) => <button key={name} className="rounded-xl border border-slate-700 bg-slate-950/60 p-2 capitalize hover:border-purple-400"><img src={`/classes/${name}.png`} alt="" className="mx-auto mb-1 h-8 w-8 object-contain" />{name}</button>)}</div>
+            <div className="mb-4 grid grid-cols-4 gap-2">{["aventurier", "escrimeur", "archer", "mage"].map((name) => <button key={name} className="rounded-xl border border-slate-700 bg-slate-950/60 p-2 capitalize hover:border-purple-400"><img src={`${import.meta.env.BASE_URL}classes/${name}.png`} alt="" className="mx-auto mb-1 h-8 w-8 object-contain" />{name}</button>)}</div>
             <div className="grid gap-3 sm:grid-cols-3"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Attaque min." value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque max." value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
           </Section>
           <Section icon="⚔️" title="Arme et compétence">
