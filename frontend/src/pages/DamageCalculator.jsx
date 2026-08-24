@@ -18,6 +18,7 @@ const defaults = {
 const fieldClass = "mt-1 w-full rounded-xl border border-[#3b2852] bg-[#12091d] px-3 py-2.5 text-[#f3eaff] outline-none transition focus:border-[#9b6bcc]";
 const number = (setter, key) => (event) => setter((old) => ({ ...old, [key]: Number(event.target.value) }));
 const cleanSpecialistName = (name = "") => name.replace(/^Carte de spécialiste (?:de l'|des |du |de |d’)/i, "").replace(/\s*\(Limité\)$/i, "").trim();
+const normalizeText = (value = "") => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const describeEffect = (effect) => {
   const type = Number(effect.BCardVNUM ?? effect.Type ?? effect.BCardType);
   const sub = Number(effect.BCardSub ?? effect.SubType ?? effect.BCardSubType);
@@ -25,8 +26,8 @@ const describeEffect = (effect) => {
   if (type === 44 && sub === 1) return `Toutes les attaques +${raw / 4} %`;
   if (type === 5 && sub === 0) return `Probabilité critique +${Math.abs(raw)} %`;
   if (type === 5 && sub === 1) return `Dégâts critiques +${Math.abs(raw)} %`;
-  if (type === 11) return `Défense ${raw < 0 ? "-" : "+"}${Math.abs(raw)}`;
-  if (type === 14) return `Résistance adverse ${raw < 0 ? "-" : "+"}${Math.abs(raw)} %`;
+  if (type === 11) return `Défense de la cible ${raw > 0 ? "-" : "+"}${Math.abs(raw)}`;
+  if (type === 14) return `Résistance de la cible ${raw > 0 ? "-" : "+"}${Math.abs(raw)} %`;
   return type ? `Effet ${type}.${sub} · ${raw}` : "";
 };
 
@@ -124,6 +125,7 @@ export default function DamageCalculator() {
   const [equipment, setEquipment] = useState({ necklace: "", ring: "", bracelet: "", hat: "", mask: "", gloves: "", boots: "", costume: "", costumeHat: "", weaponSkin: "", wings: "", miniPet: "", title: "" });
   const [saveStatus, setSaveStatus] = useState("");
   const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
+  const [ocrState, setOcrState] = useState({ status: "idle", progress: 0, message: "", matches: [] });
   const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
   const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
@@ -363,13 +365,14 @@ export default function DamageCalculator() {
   const selectedSpecialistCard = specialistCards.find((item) => String(item.vnum) === specialistCardVnum);
   const selectedSpecialistNumber = Number(selectedSpecialistCard?.data?.[12] || -1) + 1;
   const offensiveSkills = gameData.skills.filter((skill) => Number(skill.specialist) === selectedSpecialistNumber && skill.skill_type === 1 && skill.name).slice(0, 30);
+  const selectedSkill = gameData.skills.find((skill) => String(skill.vnum) === skillId);
   const selectedMonster = currentMonster;
   const monsterLocked = Boolean(selectedMonster);
   const tattooSkills = gameData.skills.filter((item) => item.class_id === 27);
   const tattooCardIds = new Set(tattooSkills.flatMap((skill) => skill.buffs || []).filter((effect) => effect.Type === 25 && effect.Value2).map((effect) => Math.floor(Math.abs(effect.Value2) / 10)));
   const tattooNames = tattooSkills.map((skill) => (skill.name || "").replace(/\s\+\d+$/, "").toLowerCase()).filter(Boolean);
   const combatBuffs = gameData.buffs.filter((item) => item.buff_type === 0 && !tattooCardIds.has(item.vnum) && !tattooNames.some((name) => (item.name || "").toLowerCase().includes(name)) && !/^Aura de Nézarun bienveillant|^Bénédiction de Lumi$/i.test(item.name || ""));
-  const targetDebuffs = gameData.buffs.filter((item) => item.buff_type === 2);
+  const targetDebuffs = gameData.buffs.filter((item) => item.buff_type === 2).map((item) => ({ ...item, effect_summary: (item.effects || []).map(describeEffect).filter(Boolean).slice(0, 4).join(" · ") }));
   const selectedDebuffs = targetDebuffs.filter((item) => debuffIds.includes(String(item.vnum)));
   const partnerSpecialists = [...gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 4 && item.equipment_slot === 12).reduce((map, item) => {
     const normalized = cleanSpecialistName(item.name);
@@ -456,6 +459,42 @@ export default function DamageCalculator() {
     const matchingCard = gameData.items.find((item) => item.item_type === 4 && item.item_sub_type === 1 && item.class_id === classMask && cleanSpecialistName(item.name).toLowerCase().includes((profileSpecialist?.name || "").toLowerCase()));
     if (matchingCard) setSpecialistCardVnum(String(matchingCard.vnum));
   }, [profile, gameData.items.length, specialistId, classMask]);
+  const importCharacterSheet = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setOcrState({ status: "error", progress: 0, message: "Le fichier doit être une image.", matches: [] });
+    setOcrState({ status: "reading", progress: 0, message: "Préparation de l’image…", matches: [] });
+    try {
+      const { recognize } = await import("tesseract.js");
+      const { data } = await recognize(file, "fra", { logger: ({ status, progress = 0 }) => setOcrState((old) => ({ ...old, status: "reading", progress: Math.round(progress * 100), message: status === "recognizing text" ? "Lecture de la fiche…" : "Chargement du moteur OCR…" })) });
+      const source = normalizeText(data.text);
+      const matches = [];
+      const detectedClass = ["aventurier", "escrimeur", "archer", "mage"].find((name) => source.includes(name));
+      const detectedMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[detectedClass] || classMask;
+      if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
+      const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
+      if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
+      const itemMatches = gameData.items.filter((item) => { const name = normalizeText(cleanSpecialistName(item.name)); return name.length >= 7 && source.includes(name); }).sort((a, b) => b.name.length - a.name.length);
+      const main = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
+      const secondary = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
+      if (main) { setMainWeaponVnum(String(main.vnum)); matches.push(`Arme : ${main.name}`); }
+      if (secondary) { setSecondaryWeaponVnum(String(secondary.vnum)); matches.push(`Arme secondaire : ${secondary.name}`); }
+      const card = itemMatches.find((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === detectedMask);
+      if (card) { selectSpecialistCard(String(card.vnum)); matches.push(`SP : ${cleanSpecialistName(card.name)}`); }
+      const slotKeys = { 6: "necklace", 7: "ring", 8: "bracelet", 2: "hat", 9: "mask", 3: "gloves", 4: "boots", 13: "costume", 14: "costumeHat", 15: "weaponSkin", 16: "wings", 17: "miniPet" };
+      const selections = {};
+      itemMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
+      if (Object.keys(selections).length) setEquipment((old) => ({ ...old, ...selections }));
+      const upgrade = source.match(/(?:amelioration|carte de specialiste)[^\d]{0,30}(?:\+\s*)?(\d{1,2})/);
+      const perfection = source.match(/perfection(?:nement)?[^\d]{0,20}(\d{1,3})/);
+      if (upgrade || perfection) setSpDraft((old) => ({ ...(old || {}), ...(upgrade ? { upgrade: Number(upgrade[1]) } : {}), ...(perfection ? { perfection: Number(perfection[1]) } : {}) }));
+      setOcrState({ status: "done", progress: 100, message: `${matches.length} éléments reconnus et appliqués. Vérifie les sélections avant de sauvegarder.`, matches: [...new Set(matches)].slice(0, 16) });
+    } catch (error) {
+      setOcrState({ status: "error", progress: 0, message: "La lecture a échoué. Utilise une fiche complète, non redimensionnée et bien nette.", matches: [] });
+    } finally {
+      event.target.value = "";
+    }
+  };
   const synchronizeNosWiki = async () => {
     setSyncState({ loading: true, counts: null, error: false });
     try {
@@ -590,10 +629,11 @@ export default function DamageCalculator() {
           <Section icon="🔮" title="Rune, options d’arme et compétence">
             <div className="mb-4"><EquipmentPicker label="Carte de spécialiste" items={specialistCards} value={specialistCardVnum} onChange={selectSpecialistCard} /></div>
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Compétence de la SP<select value={skillId} onChange={selectSkill} className={fieldClass}><option value="basic">⚔️ Attaque de base</option>{offensiveSkills.map((skill) => <option key={skill.vnum} value={skill.vnum}>{skill.name}{skill.secondary_weapon ? " · arme secondaire" : " · arme principale"}</option>)}</select></label>
+            {selectedSkill && <div className="mb-3 rounded-xl border border-[#48315f] bg-[#12091d] px-3 py-2 text-xs text-[#cdb8dd]"><strong className="text-[#e8d8f4]">{selectedSkill.name}</strong> · puissance automatique : <span className="font-black text-emerald-300">{Number(selectedSkill.power || 0).toLocaleString("fr-FR")}</span> · {selectedSkill.secondary_weapon ? "arme secondaire" : "arme principale"}</div>}
             {selectedSpecialistCard && <div className="mb-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points de la spécialiste</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"><Field label="Attaque" value={spDraft?.attack || 0} onChange={updateSpDraft("attack")} /><Field label="Défense" value={spDraft?.defence || 0} onChange={updateSpDraft("defence")} /><Field label="Élément" value={spDraft?.element || 0} onChange={updateSpDraft("element")} /><Field label="HP/MP" value={spDraft?.hpMp || 0} onChange={updateSpDraft("hpMp")} /><Field label="Amélioration" value={spDraft?.upgrade || 0} onChange={updateSpDraft("upgrade")} max={20} /><Field label="Perfectionnement" value={spDraft?.perfection || 0} onChange={updateSpDraft("perfection")} max={100} /></div></div>}
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Type d’attaque utilisé<select value={stats.attackType} onChange={(event) => { const attackType = event.target.value; const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType]; setStats((old) => ({ ...old, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence })); }} className={fieldClass}><option value="melee">⚔️ Corps à corps</option><option value="ranged">🏹 Attaque à distance</option><option value="magic">🔮 Attaque magique</option></select><span className="mt-1 block text-[11px] font-normal normal-case text-[#806d90]">Déterminé automatiquement par la compétence, mais modifiable pour les SP utilisant l’arme secondaire.</span></label>
             <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Effets de rune et options cumulés — modifiables</div>
-            <div className="grid gap-3 sm:grid-cols-4"><Field label="Puissance skill" value={stats.skillPower} onChange={number(setStats, "skillPower")} /><Field label="Attaque fixe" value={stats.flatAttack} onChange={number(setStats, "flatAttack")} /><Field label="Amélioration arme" value={stats.weaponUpgrade} onChange={number(setStats, "weaponUpgrade")} suffix={`+${result.upgradePercent}%`} max={13} /><Field label="Toutes attaques" value={stats.attackPercent} onChange={number(setStats, "attackPercent")} suffix="%" min={-100} /></div>
+            <div className="grid gap-3 sm:grid-cols-3"><Field label="Attaque fixe" value={stats.flatAttack} onChange={number(setStats, "flatAttack")} /><Field label="Amélioration arme" value={stats.weaponUpgrade} onChange={number(setStats, "weaponUpgrade")} suffix={`+${result.upgradePercent}%`} max={13} /><Field label="Toutes attaques" value={stats.attackPercent} onChange={number(setStats, "attackPercent")} suffix="%" min={-100} /></div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Dégâts monstres" value={stats.monsterDamage} onChange={number(setStats, "monsterDamage")} suffix="%" min={-100} /><Field label="Chance critique" value={stats.criticalChance} onChange={number(setStats, "criticalChance")} suffix="%" max={100} /><Field label="Dégâts critiques" value={stats.criticalDamage} onChange={number(setStats, "criticalDamage")} suffix="%" /></div>
             <div className="mt-3 grid gap-3 sm:grid-cols-4"><Field label="Chance dégâts augmentés" value={stats.increasedDamageChance} onChange={number(setStats, "increasedDamageChance")} suffix="%" max={100} /><Field label="Dégâts augmentés" value={stats.increasedDamagePercent} onChange={number(setStats, "increasedDamagePercent")} suffix="%" /><Field label="Chance critique augmenté" value={stats.increasedCriticalChance} onChange={number(setStats, "increasedCriticalChance")} suffix="%" max={100} /><Field label="Bonus critique augmenté" value={stats.increasedCriticalPercent} onChange={number(setStats, "increasedCriticalPercent")} suffix="%" /></div>
             <div className="mt-5 border-t border-[#39254d] pt-4"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">💠 Effets runiques de l’arme</div><div className="grid gap-3 sm:grid-cols-3"><Field label="Toutes les attaques +" value={runic.flatAttack} onChange={number(setRunic, "flatAttack")} /><Field label="Dégâts monstres" value={runic.monsterDamage} onChange={number(setRunic, "monsterDamage")} suffix="%" /><Field label="Probabilité critique" value={runic.criticalChance} onChange={number(setRunic, "criticalChance")} suffix="%" /><Field label="Dégâts critiques" value={runic.criticalDamage} onChange={number(setRunic, "criticalDamage")} suffix="%" /><Field label="Dégâts dragons" value={runic.dragonDamage} onChange={number(setRunic, "dragonDamage")} suffix="%" /><Field label="Élément de la fée" value={runic.fairyElement} onChange={number(setRunic, "fairyElement")} /><Field label="Points SP attaque" value={runic.spAttack} onChange={number(setRunic, "spAttack")} /><Field label="Points SP élément" value={runic.spElement} onChange={number(setRunic, "spElement")} /><Field label="Toutes les attaques" value={runic.attackPercent} onChange={number(setRunic, "attackPercent")} suffix="%" /></div></div>
@@ -655,8 +695,11 @@ export default function DamageCalculator() {
           <Section icon="🖼️" title="Import de fiche">
             <div className="rounded-xl border border-dashed border-[#61437c] bg-[#12091d] p-5 text-center">
               <div className="font-bold text-[#d9c5e9]">Lecture automatique de l’image</div>
-              <p className="mt-1 text-xs text-[#9f89b1]">Prévue à l’étape suivante : le bouton sera activé avec la reconnaissance de ta fiche standard.</p>
-              <button disabled className="mt-3 cursor-not-allowed rounded-xl bg-[#2a1a39] px-4 py-2 text-sm font-bold text-[#786788]">Import OCR bientôt disponible</button>
+              <p className="mt-1 text-xs text-[#9f89b1]">Envoie la fiche complète dans son format habituel. Les armes, la SP, la classe et les équipements reconnus seront associés aux données du calculateur.</p>
+              <label className={`mt-3 inline-flex cursor-pointer items-center rounded-xl px-4 py-2 text-sm font-black text-white ${ocrState.status === "reading" ? "pointer-events-none bg-[#402653] opacity-70" : "bg-[#713f95] hover:bg-[#8750ad]"}`}><input type="file" accept="image/png,image/jpeg,image/webp" onChange={importCharacterSheet} className="sr-only" />{ocrState.status === "reading" ? `Lecture… ${ocrState.progress}%` : "Choisir une fiche"}</label>
+              {ocrState.status === "reading" && <div className="mx-auto mt-3 h-2 max-w-md overflow-hidden rounded-full bg-[#291638]"><div className="h-full bg-[#b06fdd] transition-all" style={{ width: `${ocrState.progress}%` }} /></div>}
+              {ocrState.message && <p className={`mt-3 text-xs ${ocrState.status === "error" ? "text-rose-300" : ocrState.status === "done" ? "text-emerald-300" : "text-[#bda5cf]"}`}>{ocrState.message}</p>}
+              {!!ocrState.matches.length && <div className="mt-3 flex flex-wrap justify-center gap-2">{ocrState.matches.map((match) => <span key={match} className="rounded-lg border border-[#49315d] bg-[#1c1028] px-2 py-1 text-[11px] text-[#d7c4e5]">✓ {match}</span>)}</div>}
             </div>
           </Section>
         </div>
