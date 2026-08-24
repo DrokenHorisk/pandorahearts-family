@@ -9,7 +9,8 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     CheckConstraint,
-    Boolean
+    Boolean,
+    JSON
 )
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
@@ -96,3 +97,9 @@ class Donation(Base):
 
     gave = Column(Boolean, nullable=False, default=False)
     amount = Column(Integer, nullable=False, default=0)
+
+class CalculatorProfile(Base):
+    __tablename__ = "calculator_profiles"
+
+    username = Column(String(64), primary_key=True)
+    profile = Column(JSON, nullable=False)
