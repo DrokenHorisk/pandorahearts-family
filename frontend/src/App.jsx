@@ -27,7 +27,7 @@ function Shell() {
     <nav className="flex flex-wrap gap-2 border-b border-slate-800 p-4 items-center">
       <TabButton active={tab === "snapshot"} onClick={() => navigate("/")}>Accueil</TabButton>
       <TabButton active={tab === "history"} onClick={() => navigate("/history")}>Historique</TabButton>
-      <TabButton active={tab === "calculator"} onClick={() => navigate("/calculator/damage-pve")}>⚔️ Calculateur PvE</TabButton>
+      <TabButton active={tab === "calculator"} onClick={() => navigate("/calculator")}>⚔️ Calculateur PvE</TabButton>
       {allowed && <TabButton active={tab === "admin"} onClick={() => navigate("/admin/import")}>Admin • Import</TabButton>}
       {allowed && <TabButton active={tab === "donations"} onClick={() => navigate("/donations")}>Admin • Donations</TabButton>}
       <div className="ml-auto flex items-center gap-2">
@@ -38,7 +38,7 @@ function Shell() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/history" element={<HistoryDashboard />} />
       <Route path="/player/:nickname" element={<PlayerDashboard />} />
-      <Route path="/calculator/damage-pve" element={<DamageCalculator />} />
+      <Route path="/calculator" element={<DamageCalculator />} />
       <Route path="/login" element={<Login />} />
       <Route path="/admin/import" element={<Protected><AdminImport /></Protected>} />
       <Route path="/members" element={<MembersPage />} />
