@@ -76,6 +76,8 @@ def _summary(row):
         "element": payload.get("Element"),
         "attack_type": payload.get("AttackType"),
         "secondary_weapon": payload.get("SecondaryWeapon"),
+        "specialist": payload.get("SP"),
+        "item_vnum": payload.get("ItemVnum"),
         "equipment_slot": payload.get("EquipmentSlot"),
         "item_type": payload.get("ItemType"),
         "item_sub_type": payload.get("ItemSubType"),
