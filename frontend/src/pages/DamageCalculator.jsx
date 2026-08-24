@@ -624,7 +624,9 @@ export default function DamageCalculator() {
       if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
       const nickname = data.text.trim().split(/\s+/)[0]?.replace(/[^\p{L}\p{N}_-]/gu, "");
       const isDrokenSheet = normalizeText(header).includes("drokena") || normalizeText(nickname) === "drokena";
-      const headerValues = (header.match(/\b\d{1,3}\b/g) || []).map(Number).slice(-3);
+      const headerValues = Array.isArray(ocrResult.header_numbers) && ocrResult.header_numbers.length === 3
+        ? ocrResult.header_numbers.map(Number)
+        : (header.match(/\b\d{1,3}\b/g) || []).map(Number).slice(-3);
       if (nickname || headerValues.length === 3) { const character = { nickname: nickname || "", level: headerValues[0] || stats.level, jobLevel: headerValues[1] || stats.jobLevel, heroLevel: headerValues[2] || stats.heroLevel, className: detectedClass || className }; setOcrCharacter(character); setStats((old) => ({ ...old, level: character.level, jobLevel: character.jobLevel, heroLevel: character.heroLevel })); matches.push(`${character.nickname} · niv. ${character.level}+${character.heroLevel}`); }
       const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
       if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
