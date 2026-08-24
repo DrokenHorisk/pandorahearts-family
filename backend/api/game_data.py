@@ -85,6 +85,7 @@ def _summary(row):
         "defence_upgrade": (payload.get("Armor") or {}).get("Upgrade"),
         "resistances": payload.get("Resistances"),
         "mp_cost": payload.get("MPCost"),
+        "power": payload.get("Damage") or payload.get("Power") or payload.get("SkillPower") or 0,
         "skill_type": payload.get("Type"),
         "description_codes": payload.get("DescriptionCodes"),
         "buffs": payload.get("Buffs") or payload.get("BCards"),
