@@ -17,6 +17,7 @@ const defaults = {
 
 const fieldClass = "mt-1 w-full rounded-xl border border-[#3b2852] bg-[#12091d] px-3 py-2.5 text-[#f3eaff] outline-none transition focus:border-[#9b6bcc]";
 const number = (setter, key) => (event) => setter((old) => ({ ...old, [key]: Number(event.target.value) }));
+const cleanSpecialistName = (name = "") => name.replace(/^Carte de spécialiste (?:de l'|des |du |de |d’)/i, "").replace(/\s*\(Limité\)$/i, "").trim();
 const describeEffect = (effect) => {
   const type = Number(effect.BCardVNUM ?? effect.Type ?? effect.BCardType);
   const sub = Number(effect.BCardSub ?? effect.SubType ?? effect.BCardSubType);
@@ -53,6 +54,12 @@ function ResultCard({ label, value, accent }) {
   </div>;
 }
 
+function GameIcon({ src, alt = "", className = "h-8 w-8" }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <span className={`grid shrink-0 place-items-center rounded bg-[#0c0512] text-[#806d90] ${className}`}>✦</span>;
+  return <img src={src} alt={alt} onError={() => setFailed(true)} className={className} />;
+}
+
 function MultiDataPicker({ label, items, values, onChange, placeholder = "Rechercher…", emptyText = "Aucun effet sélectionné", levels, onLevelChange, levelOptions, getDetails }) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => items.filter((item) => item.name?.toLowerCase().includes(query.toLowerCase())).slice(0, 120), [items, query]);
@@ -63,12 +70,12 @@ function MultiDataPicker({ label, items, values, onChange, placeholder = "Recher
     <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} className={fieldClass} />
     <div className="mt-2 flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-xl border border-[#39254d] bg-[#100719] p-2">
       {filtered.map((item) => <button type="button" key={item.vnum} onClick={() => toggle(String(item.vnum))} title={item.name} className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition ${values.includes(String(item.vnum)) ? "border-[#c58af2] bg-[#512c70] text-white" : "border-[#38244b] bg-[#190d27] text-[#cbb8dc] hover:border-[#765091]"}`}>
-        {item.icon_url ? <img src={item.icon_url} alt="" className="h-7 w-7 shrink-0 rounded bg-[#0c0512] object-contain p-0.5" /> : <span className="grid h-7 w-7 shrink-0 place-items-center rounded bg-[#0c0512]">✦</span>}
+        <GameIcon src={item.icon_url} className="h-7 w-7 shrink-0 rounded bg-[#0c0512] object-contain p-0.5" />
         <span className="max-w-48"><span className="block truncate">{item.name}</span>{item.effect_summary && <span className="mt-0.5 block truncate text-[10px] font-normal text-[#9f89b1]">{item.effect_summary}</span>}</span>
       </button>)}
       {!filtered.length && <span className="p-2 text-xs text-[#806d90]">Aucun résultat</span>}
     </div>
-    <div className="mt-2 grid gap-2">{selected.map((item) => { const id = String(item.vnum); const level = levels?.[id] ?? levelOptions?.[0]; return <div key={item.vnum} className="flex items-center gap-2 rounded-xl border border-[#583b70] bg-[#241331] p-2 text-xs font-bold">{item.icon_url && <img src={item.icon_url} alt="" className="h-9 w-9 object-contain" />}<span className="min-w-0 flex-1"><span className="block truncate">{item.name}</span>{getDetails && <span className="mt-0.5 block font-normal text-[#a991bd]">{getDetails(item, level)}</span>}</span>{levelOptions && <select aria-label={`Niveau de ${item.name}`} value={level} onChange={(event) => onLevelChange(id, event.target.value)} className="rounded-lg border border-[#62417c] bg-[#12091d] px-2 py-1.5 text-xs text-white">{levelOptions.map((option) => <option key={option} value={option}>{typeof option === "number" ? `+${option}` : option}</option>)}</select>}<button type="button" onClick={() => toggle(id)} className="px-2 text-lg text-[#9b84ad]">×</button></div>; })}{!selected.length && <span className="text-xs text-[#806d90]">{emptyText}</span>}</div>
+    <div className="mt-2 grid gap-2">{selected.map((item) => { const id = String(item.vnum); const level = levels?.[id] ?? levelOptions?.[0]; return <div key={item.vnum} className="flex items-center gap-2 rounded-xl border border-[#583b70] bg-[#241331] p-2 text-xs font-bold"><GameIcon src={item.icon_url} className="h-9 w-9 object-contain" /><span className="min-w-0 flex-1"><span className="block truncate">{item.name}</span>{getDetails && <span className="mt-0.5 block font-normal text-[#a991bd]">{getDetails(item, level)}</span>}</span>{levelOptions && <select aria-label={`Niveau de ${item.name}`} value={level} onChange={(event) => onLevelChange(id, event.target.value)} className="rounded-lg border border-[#62417c] bg-[#12091d] px-2 py-1.5 text-xs text-white">{levelOptions.map((option) => <option key={option} value={option}>{typeof option === "number" ? `+${option}` : option}</option>)}</select>}<button type="button" onClick={() => toggle(id)} className="px-2 text-lg text-[#9b84ad]">×</button></div>; })}{!selected.length && <span className="text-xs text-[#806d90]">{emptyText}</span>}</div>
   </div>;
 }
 
@@ -77,7 +84,7 @@ function EquipmentPicker({ label, items, value, onChange }) {
   const [open, setOpen] = useState(false);
   const selected = items.find((item) => String(item.vnum) === value);
   const filtered = items.filter((item) => item.name?.toLowerCase().includes(query.toLowerCase())).slice(0, 80);
-  return <div className="block text-xs font-bold uppercase text-[#a991bd]"><span>{label}</span><button type="button" onClick={() => setOpen((current) => !current)} className={`${fieldClass} flex items-center gap-2 text-left normal-case`}>{selected?.icon_url ? <img src={selected.icon_url} alt="" className="h-10 w-10 rounded bg-[#0d0615] object-contain p-1" /> : <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-[#0d0615]">✦</span>}<span className="min-w-0 flex-1 truncate">{selected?.name || "Aucun équipement"}</span><span>⌄</span></button>{open && <div className="mt-2 rounded-xl border border-[#4b3261] bg-[#100719] p-2"><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Rechercher ${label.toLowerCase()}…`} className={fieldClass} /><div className="mt-2 grid max-h-56 grid-cols-2 gap-2 overflow-y-auto"><button type="button" onClick={() => { onChange(""); setOpen(false); }} className="rounded-lg border border-[#38244b] p-2 text-left text-[#aa95ba]">Aucun</button>{filtered.map((item) => <button type="button" key={item.vnum} onClick={() => { onChange(String(item.vnum)); setOpen(false); setQuery(""); }} className={`flex items-center gap-2 rounded-lg border p-2 text-left normal-case ${String(item.vnum) === value ? "border-[#bc7ee8] bg-[#4a2868] text-white" : "border-[#38244b] bg-[#190d27] text-[#cbb8dc]"}`}><img src={item.icon_url} alt="" className="h-9 w-9 shrink-0 object-contain" /><span className="line-clamp-2">{item.name}</span></button>)}</div></div>}{selected?.effect_summary && <span className="mt-1 block text-[10px] font-normal normal-case text-emerald-300">{selected.effect_summary}</span>}</div>;
+  return <div className="block text-xs font-bold uppercase text-[#a991bd]"><span>{label}</span><button type="button" onClick={() => setOpen((current) => !current)} className={`${fieldClass} flex items-center gap-2 text-left normal-case`}><GameIcon src={selected?.icon_url} className="h-10 w-10 rounded bg-[#0d0615] object-contain p-1" /><span className="min-w-0 flex-1 truncate">{selected?.name || "Aucun équipement"}</span><span>⌄</span></button>{open && <div className="mt-2 rounded-xl border border-[#4b3261] bg-[#100719] p-2"><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Rechercher ${label.toLowerCase()}…`} className={fieldClass} /><div className="mt-2 grid max-h-56 grid-cols-2 gap-2 overflow-y-auto"><button type="button" onClick={() => { onChange(""); setOpen(false); }} className="rounded-lg border border-[#38244b] p-2 text-left text-[#aa95ba]">Aucun</button>{filtered.map((item) => <button type="button" key={item.vnum} onClick={() => { onChange(String(item.vnum)); setOpen(false); setQuery(""); }} className={`flex items-center gap-2 rounded-lg border p-2 text-left normal-case ${String(item.vnum) === value ? "border-[#bc7ee8] bg-[#4a2868] text-white" : "border-[#38244b] bg-[#190d27] text-[#cbb8dc]"}`}><GameIcon src={item.icon_url} className="h-9 w-9 shrink-0 object-contain" /><span className="line-clamp-2">{item.name}</span></button>)}</div></div>}{selected?.effect_summary && <span className="mt-1 block text-[10px] font-normal normal-case text-emerald-300">{selected.effect_summary}</span>}</div>;
 }
 
 export default function DamageCalculator() {
@@ -86,7 +93,7 @@ export default function DamageCalculator() {
   const [stats, setStats] = useState(defaults);
   const [monsterId, setMonsterId] = useState("1619");
   const [skillId, setSkillId] = useState("basic");
-  const [skillQuery, setSkillQuery] = useState("");
+  const [specialistCardVnum, setSpecialistCardVnum] = useState("");
   const [specialistId, setSpecialistId] = useState("");
   const [fairyId, setFairyId] = useState("");
   const [className, setClassName] = useState("archer");
@@ -124,26 +131,29 @@ export default function DamageCalculator() {
   const selectedPartnerBuffs = partnerIds.map((id) => {
     const partner = gameData.items.find((item) => String(item.vnum) === id);
     const rank = partnerRanks[id] || "S";
-    const baseName = (partner?.name || "").replace(/\s*\(Limité\)$/i, "").trim();
+    const baseName = cleanSpecialistName(partner?.name);
     return gameData.buffs.find((buff) => buff.name === `Aura de ${baseName} (${rank})`) || gameData.buffs.find((buff) => buff.name === `Bénédiction de ${baseName} (${rank})`);
   }).filter(Boolean);
+  const selectedPets = petIds.map((id) => gameData.monsters.find((item) => String(item.vnum) === id)).filter(Boolean);
+  const selectedPetBlessings = selectedPets.map((pet) => gameData.buffs.find((buff) => buff.name === `Bénédiction de ${pet.name}`)).filter(Boolean);
   const selectedCombatCards = gameData.buffs.filter((buff) => buffIds.includes(String(buff.vnum)));
   const combatCardAttackPercent = selectedCombatCards.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const companionAttackPercent = selectedPartnerBuffs.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
-  const passiveEffects = gameData.items.filter((item) => characterPassiveIds.includes(String(item.vnum))).flatMap((item) => [...(item.buffs || []), ...gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum)).flatMap((skill) => skill.buffs || [])]);
+  const petAttackPercent = selectedPetBlessings.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
+  const passiveEffects = gameData.items.filter((item) => characterPassiveIds.includes(String(item.vnum))).flatMap((item) => [...(item.buffs || []), ...gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum) || skill.name?.trim().toLowerCase() === item.name?.trim().toLowerCase()).flatMap((skill) => skill.buffs || [])]);
   const equipmentEffects = Object.values(selectedEquipment).filter(Boolean).flatMap((item) => item.buffs || []);
   const automaticAttackPercent = [...passiveEffects, ...equipmentEffects].filter((effect) => Number(effect.BCardVNUM ?? effect.Type) === 44 && Number(effect.BCardSub ?? effect.SubType) === 1).reduce((total, effect) => total + Number(effect.EffectVal1 ?? effect.Value ?? 0) / 4, 0);
   const result = useMemo(() => calculateDamage({
     ...stats,
-    flatAttack: stats.flatAttack + runic.flatAttack,
+    flatAttack: stats.flatAttack + runic.flatAttack + Number(spDraft?.attack || 0) + Number(spDraft?.perfectionStats?.[0] || 0),
     monsterDamage: stats.monsterDamage + runic.monsterDamage + (dragonTarget ? runic.dragonDamage : 0),
     criticalChance: stats.criticalChance + runic.criticalChance,
     criticalDamage: stats.criticalDamage + runic.criticalDamage,
     fairyElement: stats.fairyElement + runic.fairyElement,
-    elementPower: stats.elementPower + runic.spElement,
-    attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + combatCardAttackPercent + automaticAttackPercent,
+    elementPower: stats.elementPower + runic.spElement + Number(spDraft?.perfectionStats?.[2] || 0),
+    attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack + runic.spAttack,
-  }), [stats, runic, heroicSetActive, dragonTarget, companionAttackPercent, combatCardAttackPercent, automaticAttackPercent]);
+  }), [stats, runic, spDraft, heroicSetActive, dragonTarget, companionAttackPercent, petAttackPercent, combatCardAttackPercent, automaticAttackPercent]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === nextSpecialist) || loadedProfile.specialists[0];
@@ -282,6 +292,7 @@ export default function DamageCalculator() {
       weapon: { ...profile.weapon, upgrade: stats.weaponUpgrade, vnum: Number(mainWeaponVnum) || profile.weapon.vnum },
       secondaryWeapon: { ...(profile.secondaryWeapon || {}), vnum: Number(secondaryWeaponVnum) || profile.secondaryWeapon?.vnum },
       equipmentSelections: equipment,
+      specialists: profile.specialists.map((specialist) => specialist.id === specialistId ? { ...specialist, ...spDraft, cardVnum: Number(specialistCardVnum) || specialist.cardVnum } : specialist),
     };
     setSaveStatus("saving");
     try {
@@ -319,6 +330,18 @@ export default function DamageCalculator() {
       setStats((old) => ({ ...old, skillPower: skill.power || 0, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence }));
     }
   };
+  const selectSpecialistCard = (value) => {
+    const card = gameData.items.find((item) => String(item.vnum) === value);
+    setSpecialistCardVnum(value);
+    setSkillId("basic");
+    const savedSpecialist = profile?.specialists?.find((specialist) => Number(specialist.cardVnum) === Number(value));
+    setSpDraft(savedSpecialist ? { ...savedSpecialist } : { attack: 0, defence: 0, element: 0, hpMp: 0, upgrade: 0, perfection: 0, perfectionStats: [0, 0, 0, 0] });
+    if (!card) return;
+    const usesSecondary = Boolean(Number(card.data?.[3] || 0));
+    const attackType = className === "escrimeur" ? (usesSecondary ? "ranged" : "melee") : className === "archer" ? (usesSecondary ? "melee" : "ranged") : className === "mage" ? (usesSecondary ? "ranged" : "magic") : "melee";
+    const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType];
+    setStats((old) => ({ ...old, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence }));
+  };
 
   const classMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[className];
   const classWeapons = gameData.items.filter((item) => item.item_type === 0 && item.class_id === classMask);
@@ -332,7 +355,14 @@ export default function DamageCalculator() {
   }[className];
   const selectedMainWeapon = mainWeapons.find((item) => String(item.vnum) === mainWeaponVnum);
   const selectedSecondaryWeapon = secondaryWeapons.find((item) => String(item.vnum) === secondaryWeaponVnum);
-  const offensiveSkills = gameData.skills.filter((skill) => skill.class_id !== 27 && skill.specialist > 0 && skill.attack_type != null && skill.name?.toLowerCase().includes(skillQuery.toLowerCase())).slice(0, 250);
+  const specialistCards = [...gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === classMask).reduce((map, item) => {
+    const name = cleanSpecialistName(item.name);
+    if (!map.has(name)) map.set(name, { ...item, name });
+    return map;
+  }, new Map()).values()];
+  const selectedSpecialistCard = specialistCards.find((item) => String(item.vnum) === specialistCardVnum);
+  const selectedSpecialistNumber = Number(selectedSpecialistCard?.data?.[12] || -1) + 1;
+  const offensiveSkills = gameData.skills.filter((skill) => Number(skill.specialist) === selectedSpecialistNumber && skill.skill_type === 1 && skill.name).slice(0, 30);
   const selectedMonster = currentMonster;
   const monsterLocked = Boolean(selectedMonster);
   const tattooSkills = gameData.skills.filter((item) => item.class_id === 27);
@@ -342,7 +372,7 @@ export default function DamageCalculator() {
   const targetDebuffs = gameData.buffs.filter((item) => item.buff_type === 2);
   const selectedDebuffs = targetDebuffs.filter((item) => debuffIds.includes(String(item.vnum)));
   const partnerSpecialists = [...gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 4 && item.equipment_slot === 12).reduce((map, item) => {
-    const normalized = (item.name || "").replace(/\s*\(Limité\)$/i, "").trim();
+    const normalized = cleanSpecialistName(item.name);
     if (!map.has(normalized) || /\(Limité\)$/i.test(map.get(normalized).name || "")) map.set(normalized, { ...item, name: normalized });
     return map;
   }, new Map()).values()];
@@ -380,7 +410,7 @@ export default function DamageCalculator() {
     });
   }, [partnerIds, partnerData]);
   const bookItems = gameData.items.filter((item) => /livre|manuel|guide|mémorial|stratégie|recherche|entraînement|mode d'emploi/i.test(item.name || "")).map((item) => {
-    const linkedSkills = gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum));
+    const linkedSkills = gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum) || skill.name?.trim().toLowerCase() === item.name?.trim().toLowerCase());
     const effects = [...(item.buffs || []), ...linkedSkills.flatMap((skill) => skill.buffs || [])];
     const labels = effects.map(describeEffect).filter(Boolean);
     return { ...item, effect_summary: [...new Set(labels)].slice(0, 2).join(" · ") };
@@ -403,25 +433,29 @@ export default function DamageCalculator() {
   const bySlot = (slot) => equipmentItems.filter((item) => item.equipment_slot === slot);
   const jewellery = { necklace: bySlot(6), ring: bySlot(7), bracelet: bySlot(8) };
   const defensiveGear = { hat: bySlot(2), gloves: bySlot(3), boots: bySlot(4), mask: bySlot(9) };
-  const cosmetics = { costume: bySlot(13), costumeHat: bySlot(14), weaponSkin: bySlot(15), wings: bySlot(16), miniPet: bySlot(17), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
-  const selectedPetBlessings = petIds.map((id) => {
-    const pet = pets.find((item) => String(item.vnum) === id);
-    return gameData.buffs.find((buff) => buff.name === `Bénédiction de ${pet?.name}`);
-  }).filter(Boolean);
+  const permanent = (items) => items.filter((item) => /\(permanent\)/i.test(item.name || ""));
+  const cosmetics = { costume: permanent(bySlot(13)), costumeHat: permanent(bySlot(14)), weaponSkin: permanent(bySlot(15)), wings: permanent(bySlot(16)), miniPet: permanent(bySlot(17)), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
   const appliedEffects = [
     ...selectedCombatCards,
     ...selectedDebuffs,
     ...selectedPartnerBuffs,
     ...selectedPetBlessings,
     ...Object.values(selectedEquipment).filter(Boolean),
-    ...bookItems.filter((item) => characterPassiveIds.includes(String(item.vnum))),
   ];
+  const companionBreakdown = [...selectedPartnerBuffs, ...selectedPetBlessings].map((buff) => {
+    const attack = (buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
+    return attack ? `${buff.name.replace(/\s*\([F-S]\)$/, "")} +${attack} %` : null;
+  }).filter(Boolean);
+  const totalAutomaticAttack = companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent + (heroicSetActive ? 3 : 0);
   useEffect(() => {
     if (!profile || !gameData.items.length) return;
     setMainWeaponVnum(String(profile.weapon.vnum || ""));
     setSecondaryWeaponVnum(String(profile.secondaryWeapon?.vnum || ""));
     if (profile.equipmentSelections) setEquipment((old) => ({ ...old, ...profile.equipmentSelections }));
-  }, [profile, gameData.items.length]);
+    const profileSpecialist = profile.specialists.find((item) => item.id === specialistId) || profile.specialists[0];
+    const matchingCard = gameData.items.find((item) => item.item_type === 4 && item.item_sub_type === 1 && item.class_id === classMask && cleanSpecialistName(item.name).toLowerCase().includes((profileSpecialist?.name || "").toLowerCase()));
+    if (matchingCard) setSpecialistCardVnum(String(matchingCard.vnum));
+  }, [profile, gameData.items.length, specialistId, classMask]);
   const synchronizeNosWiki = async () => {
     setSyncState({ loading: true, counts: null, error: false });
     try {
@@ -521,11 +555,12 @@ export default function DamageCalculator() {
 
       <section className="mb-6 rounded-2xl border border-[#4a315f] bg-[#180d26] p-4">
         <button type="button" onClick={() => setShowEffectDetails((value) => !value)} className="flex w-full items-center justify-between gap-4 text-left">
-          <span><span className="block text-xs font-black uppercase tracking-widest text-[#c48ce9]">Effets actuellement appliqués automatiquement</span><span className="mt-1 block text-sm text-[#a991bd]">{appliedEffects.length} sources actives · équipement, buffs, compagnons et livres réunis</span></span>
+          <span><span className="block text-xs font-black uppercase tracking-widest text-[#c48ce9]">Effets actuellement appliqués automatiquement</span><span className="mt-1 block text-sm text-[#a991bd]">{appliedEffects.length} effets visuels · les livres restent comptabilisés séparément dans les valeurs passives</span></span>
           <span className="rounded-lg border border-[#55396c] bg-[#241331] px-3 py-2 text-xs font-bold text-[#d6bee8]">{showEffectDetails ? "Masquer" : "Afficher"}</span>
         </button>
         {showEffectDetails && <div className="mt-4 border-t border-[#39254d] pt-4">
-          <div className="flex flex-wrap gap-2">{appliedEffects.map((item, index) => <span key={`${item.kind || "effect"}-${item.vnum}-${index}`} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${item.buff_type === 2 ? "border-rose-900/60 bg-rose-950/20 text-rose-200" : "border-[#4b3860] bg-[#12091d] text-[#d7c2e7]"}`}>{item.icon_url && <img src={item.icon_url} alt="" className="h-6 w-6 object-contain" />}<strong>{item.name}</strong>{item.effect_summary && <span className="text-emerald-300">· {item.effect_summary}</span>}</span>)}{!appliedEffects.length && <span className="text-xs text-[#806d90]">Aucun effet sélectionné pour le moment.</span>}</div>
+          <div className="mb-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3 text-xs"><div className="font-black uppercase tracking-wide text-emerald-300">Résumé des bonus offensifs</div><div className="mt-1 text-[#d8cce1]">{companionBreakdown.length ? `${companionBreakdown.join(" + ")} = ` : ""}<strong className="text-emerald-300">+{totalAutomaticAttack} % d’attaque automatique</strong></div>{automaticAttackPercent > 0 && <div className="mt-1 text-[#a991bd]">Dont livres et équipement : +{automaticAttackPercent} %</div>}</div>
+          <div className="flex flex-wrap gap-2">{appliedEffects.map((item, index) => <span key={`${item.kind || "effect"}-${item.vnum}-${index}`} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${item.buff_type === 2 ? "border-rose-900/60 bg-rose-950/20 text-rose-200" : "border-[#4b3860] bg-[#12091d] text-[#d7c2e7]"}`}><GameIcon src={item.icon_url} className="h-6 w-6 object-contain" /><strong>{item.name}</strong>{item.effect_summary && <span className="text-emerald-300">· {item.effect_summary}</span>}</span>)}{!appliedEffects.length && <span className="text-xs text-[#806d90]">Aucun effet sélectionné pour le moment.</span>}</div>
         </div>}
       </section>
 
@@ -539,11 +574,11 @@ export default function DamageCalculator() {
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="space-y-5">
           <Section icon="🏹" title="Personnage">
-            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{["aventurier", "escrimeur", "archer", "mage"].map((name) => <button type="button" key={name} onClick={() => setClassName(name)} className={`rounded-xl border p-2 capitalize transition ${className === name ? "border-[#a66ed1] bg-[#4a2868] text-white" : "border-[#3b2852] bg-[#12091d] text-[#aa95ba] hover:border-[#745090]"}`}><img src={`${import.meta.env.BASE_URL}classes/${name}.png`} alt="" className="mx-auto mb-1 h-9 w-9 object-contain" />{name}</button>)}</div>
+            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{["aventurier", "escrimeur", "archer", "mage"].map((name) => <button type="button" key={name} onClick={() => { setClassName(name); setSpecialistCardVnum(""); setSkillId("basic"); }} className={`rounded-xl border p-2 capitalize transition ${className === name ? "border-[#a66ed1] bg-[#4a2868] text-white" : "border-[#3b2852] bg-[#12091d] text-[#aa95ba] hover:border-[#745090]"}`}><img src={`${import.meta.env.BASE_URL}classes/${name}.png`} alt="" className="mx-auto mb-1 h-9 w-9 object-contain" />{name}</button>)}</div>
             <div className="grid gap-3 sm:grid-cols-3"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Attaque min." value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque max." value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
             {gameData.items.length > 0 && <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[0]}<div className="mt-1 flex items-center gap-2">{selectedMainWeapon?.icon_url && <img src={selectedMainWeapon.icon_url} alt="" className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}<select value={mainWeaponVnum} onChange={(event) => setMainWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{mainWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
-              <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2">{selectedSecondaryWeapon?.icon_url && <img src={selectedSecondaryWeapon.icon_url} alt="" className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}<select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
+              <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[0]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedMainWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={mainWeaponVnum} onChange={(event) => setMainWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{mainWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
+              <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedSecondaryWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
             </div>}
             <div className="mt-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3">
               <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Bijoux</div>
@@ -553,8 +588,9 @@ export default function DamageCalculator() {
             {profile && <p className="mt-3 rounded-xl border border-[#4a335f] bg-[#12091d] p-3 text-xs text-[#b9a4ca]">Valeurs privées DrokenA chargées automatiquement. Elles restent modifiables pour simuler un autre équipement.</p>}
           </Section>
           <Section icon="🔮" title="Rune, options d’arme et compétence">
-            <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Rechercher une compétence de SP<input value={skillQuery} onChange={(event) => setSkillQuery(event.target.value)} placeholder="Nom de la compétence…" className={fieldClass} /></label>
-            <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Compétence<select value={skillId} onChange={selectSkill} className={fieldClass}>{SKILLS.map((skill) => <option key={skill.id} value={skill.id}>{skill.icon} {skill.name}</option>)}{offensiveSkills.map((skill) => <option key={skill.vnum} value={skill.vnum}>{skill.name}{skill.secondary_weapon ? " · arme secondaire" : ""}</option>)}</select></label>
+            <div className="mb-4"><EquipmentPicker label="Carte de spécialiste" items={specialistCards} value={specialistCardVnum} onChange={selectSpecialistCard} /></div>
+            <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Compétence de la SP<select value={skillId} onChange={selectSkill} className={fieldClass}><option value="basic">⚔️ Attaque de base</option>{offensiveSkills.map((skill) => <option key={skill.vnum} value={skill.vnum}>{skill.name}{skill.secondary_weapon ? " · arme secondaire" : " · arme principale"}</option>)}</select></label>
+            {selectedSpecialistCard && <div className="mb-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points de la spécialiste</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"><Field label="Attaque" value={spDraft?.attack || 0} onChange={updateSpDraft("attack")} /><Field label="Défense" value={spDraft?.defence || 0} onChange={updateSpDraft("defence")} /><Field label="Élément" value={spDraft?.element || 0} onChange={updateSpDraft("element")} /><Field label="HP/MP" value={spDraft?.hpMp || 0} onChange={updateSpDraft("hpMp")} /><Field label="Amélioration" value={spDraft?.upgrade || 0} onChange={updateSpDraft("upgrade")} max={20} /><Field label="Perfectionnement" value={spDraft?.perfection || 0} onChange={updateSpDraft("perfection")} max={100} /></div></div>}
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Type d’attaque utilisé<select value={stats.attackType} onChange={(event) => { const attackType = event.target.value; const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType]; setStats((old) => ({ ...old, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence })); }} className={fieldClass}><option value="melee">⚔️ Corps à corps</option><option value="ranged">🏹 Attaque à distance</option><option value="magic">🔮 Attaque magique</option></select><span className="mt-1 block text-[11px] font-normal normal-case text-[#806d90]">Déterminé automatiquement par la compétence, mais modifiable pour les SP utilisant l’arme secondaire.</span></label>
             <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Effets de rune et options cumulés — modifiables</div>
             <div className="grid gap-3 sm:grid-cols-4"><Field label="Puissance skill" value={stats.skillPower} onChange={number(setStats, "skillPower")} /><Field label="Attaque fixe" value={stats.flatAttack} onChange={number(setStats, "flatAttack")} /><Field label="Amélioration arme" value={stats.weaponUpgrade} onChange={number(setStats, "weaponUpgrade")} suffix={`+${result.upgradePercent}%`} max={13} /><Field label="Toutes attaques" value={stats.attackPercent} onChange={number(setStats, "attackPercent")} suffix="%" min={-100} /></div>
@@ -579,7 +615,7 @@ export default function DamageCalculator() {
           </Section>
           <Section icon="👹" title="Monstre">
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Choisir une cible<select value={monsterId} onChange={selectMonster} className={fieldClass}>{MONSTERS.map((monster) => <option key={monster.id} value={monster.id}>{monster.icon} {monster.name}</option>)}{gameData.monsters.map((monster) => <option key={monster.vnum} value={monster.vnum}>{monster.name} · niv. {monster.level}{monster.hero_level ? `+${monster.hero_level}` : ""}</option>)}</select></label>
-            {gameData.monsters.find((monster) => String(monster.vnum) === monsterId)?.icon_url && <img src={gameData.monsters.find((monster) => String(monster.vnum) === monsterId).icon_url} alt="" className="mb-3 h-16 w-16 rounded-xl border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}
+            <GameIcon src={gameData.monsters.find((monster) => String(monster.vnum) === monsterId)?.icon_url} className="mb-3 h-16 w-16 rounded-xl border border-[#3b2852] bg-[#0d0615] object-contain p-1" />
             {monsterLocked ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {[["Élément", ELEMENTS[stats.monsterElement]?.label], [`Défense ${{ melee: "corps à corps", ranged: "distance", magic: "magique" }[stats.attackType]}`, stats.defence.toLocaleString("fr-FR")], ["Amélioration", `+${stats.monsterDefenceUpgrade}`], ["Résistance", `${stats.resistance}%`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#3b2852] bg-[#12091d] p-3"><div className="text-[10px] font-bold uppercase text-[#8e78a0]">{label}</div><div className="mt-1 font-black text-[#eadcf5]">{value}</div></div>)}
               <div className="col-span-2 rounded-lg bg-[#241331] px-3 py-2 text-xs text-[#bba5cc] sm:col-span-4">🔒 Les statistiques proviennent de la cible sélectionnée et sont protégées contre les modifications accidentelles.</div>
