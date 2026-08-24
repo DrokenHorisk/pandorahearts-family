@@ -1,11 +1,11 @@
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
 
 export const ELEMENTS = {
-  none: { label: "Sans élément", icon: "◌", strong: null },
-  fire: { label: "Feu", icon: "🔥", strong: "dark" },
-  water: { label: "Eau", icon: "💧", strong: "fire" },
-  light: { label: "Lumière", icon: "☀️", strong: "water" },
-  dark: { label: "Obscurité", icon: "🌙", strong: "light" },
+  none: { label: "Sans élément", icon: "◌" },
+  fire: { label: "Feu", icon: "🔥" },
+  water: { label: "Eau", icon: "💧" },
+  light: { label: "Lumière", icon: "☀️" },
+  dark: { label: "Obscurité", icon: "🌙" },
 };
 
 // Bonus officiels d'amélioration d'arme utilisés par le jeu. Le bonus est
@@ -43,9 +43,8 @@ export function calculateDamage(input) {
   const elementPower = Math.max(0, Number(input.elementPower) || 0);
   const resistance = clamp((Number(input.resistance) || 0) - resistanceReduction, -100, 200);
   const sameElement = input.attackElement !== "none" && input.attackElement === input.monsterElement;
-  const advantage = ELEMENTS[input.attackElement]?.strong === input.monsterElement ? 1.5 : 1;
-  const disadvantage = ELEMENTS[input.monsterElement]?.strong === input.attackElement ? 0.5 : 1;
-  const elementRelation = sameElement ? 0 : advantage * disadvantage;
+  const opposed = [["fire", "water"], ["light", "dark"]].some((pair) => pair.includes(input.attackElement) && pair.includes(input.monsterElement));
+  const elementRelation = sameElement ? 0 : opposed ? 2 : 1;
   const elementMultiplier = elementRelation * (fairy / 100) * (1 + elementPower / 100) * (1 - resistance / 100);
 
   const total = (physicalDamage) => Math.max(1, physicalDamage + Math.max(0, physicalDamage * elementMultiplier));
