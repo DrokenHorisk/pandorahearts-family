@@ -644,15 +644,17 @@ export default function DamageCalculator() {
       if (nickname || headerValues.length === 3) { const character = { nickname: nickname || "", level: headerValues[0] || stats.level, jobLevel: headerValues[1] || stats.jobLevel, heroLevel: headerValues[2] || stats.heroLevel, className: detectedClass || className }; setOcrCharacter(character); setStats((old) => ({ ...old, level: character.level, jobLevel: character.jobLevel, heroLevel: character.heroLevel })); matches.push(`${character.nickname} · niv. ${character.level}+${character.heroLevel}`); }
       const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
       if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
+      const equipmentRegions = Object.fromEntries(Object.entries(ocrResult.regions?.equipment || {}).map(([slot, text]) => [slot, normalizeText(text)]));
       const itemMatches = gameData.items.filter((item) => item.name && fuzzyIncludes(equipmentSource, item.name)).sort((a, b) => b.name.length - a.name.length);
-      const main = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
-      const secondary = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
+      const regionalItem = (slot, equipmentSlot) => gameData.items.filter((item) => item.name && item.item_type === 0 && item.equipment_slot === equipmentSlot && item.class_id === detectedMask && fuzzyIncludes(equipmentRegions[slot] || "", item.name)).sort((a, b) => b.name.length - a.name.length)[0];
+      const main = regionalItem("main", 0) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
+      const secondary = regionalItem("secondary", 5) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
       if (main) { setMainWeaponVnum(String(main.vnum)); matches.push(`Arme : ${main.name}`); }
       if (secondary) { setSecondaryWeaponVnum(String(secondary.vnum)); matches.push(`Arme secondaire : ${secondary.name}`); }
-      const itemWindow = (item, length = 650) => { const name = normalizeText(item?.name || ""); const start = equipmentSource.indexOf(name); return start >= 0 ? equipmentSource.slice(start, start + length) : ""; };
-      const upgradeFrom = (item) => Number(itemWindow(item).match(/(?:\+ )?(\d{1,2}) (?:phenomenal|ancestral|utile|bonne|mystique)/)?.[1] || 0);
-      const armor = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 1 && item.class_id === detectedMask);
-      const upgrades = { main: upgradeFrom(main), secondary: upgradeFrom(secondary), armor: upgradeFrom(armor) }; setEquipmentUpgrades(upgrades);
+      const itemWindow = (item, length = 650, slot = "") => { if (equipmentRegions[slot]) return equipmentRegions[slot]; const name = normalizeText(item?.name || ""); const start = equipmentSource.indexOf(name); return start >= 0 ? equipmentSource.slice(start, start + length) : ""; };
+      const upgradeFrom = (item, slot) => Number(itemWindow(item, 650, slot).match(/(?:\+ )?(\d{1,2}) (?:phenomenal|ancestral|utile|bon|bonne|mysterieux)/)?.[1] || 0);
+      const armor = regionalItem("armor", 1) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 1 && item.class_id === detectedMask);
+      const upgrades = { main: upgradeFrom(main, "main"), secondary: upgradeFrom(secondary, "secondary"), armor: upgradeFrom(armor, "armor") }; setEquipmentUpgrades(upgrades);
       if (upgrades.main) setStats((old) => ({ ...old, weaponUpgrade: Math.min(13, upgrades.main) }));
       const monsterRune = equipmentSource.match(/degats augmentes sur les monstres (\d{1,3})/);
       const criticalRune = equipmentSource.match(/probabilite d un coup critique augmente (\d{1,3})/);
@@ -683,6 +685,7 @@ export default function DamageCalculator() {
       const slotKeys = { 1: "armor", 6: "necklace", 7: "ring", 8: "bracelet", 2: "hat", 9: "mask", 3: "gloves", 4: "boots", 13: "costume", 14: "costumeHat", 15: "weaponSkin", 16: "wings", 17: "miniPet" };
       const selections = {};
       itemMatches.filter((item) => [1, 2, 3, 4, 6, 7, 8, 9].includes(item.equipment_slot)).forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
+      if (armor) { selections.armor = String(armor.vnum); matches.push(`Armure : ${armor.name}`); }
       const costumeMatches = gameData.items.filter((item) => [13, 14, 15, 16, 17].includes(item.equipment_slot) && item.name && fuzzyIncludes(costumeSource, item.name)).sort((a, b) => b.name.length - a.name.length);
       costumeMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(item.name); } });
       if (isDrokenSheet) {
