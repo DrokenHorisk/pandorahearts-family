@@ -103,7 +103,7 @@ export default function DamageCalculator() {
   const [saveStatus, setSaveStatus] = useState("");
   const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
   const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
-  const heroicSetActive = [selectedEquipment.necklace, selectedEquipment.ring, selectedEquipment.bracelet].every((item) => [94, 96, 98].includes(Number(item?.hero_level))) || Object.values(heroicJewels).every(Boolean);
+  const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
   const dragonTarget = currentMonster?.name?.toLowerCase().includes("dragon");
   const selectedPartnerBuffs = partnerIds.map((id) => {
