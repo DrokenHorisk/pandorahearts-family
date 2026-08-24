@@ -33,6 +33,11 @@ def _summary(row):
         "mp_cost": payload.get("MPCost"),
         "cooldown": payload.get("Cooldown"),
         "range": payload.get("Range"),
+        "effect_type": payload.get("Type"),
+        "sub_type": payload.get("SubType"),
+        "first_data": payload.get("FirstData"),
+        "second_data": payload.get("SecondData"),
+        "third_data": payload.get("ThirdData"),
     }
 
 
