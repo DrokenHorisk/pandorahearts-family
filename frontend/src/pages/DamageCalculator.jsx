@@ -463,7 +463,7 @@ export default function DamageCalculator() {
   const petDetails = (item) => {
     const blessing = gameData.buffs.find((buff) => buff.name === `Bénédiction de ${item.name}`) || gameData.buffs.find((buff) => buff.name?.includes(item.name) && /bénédiction|aura/i.test(buff.name));
     if (blessing) return <span><span className="block text-[#d8c3e8]">Buff · {blessing.name}</span><span className="mt-0.5 block text-[10px] text-emerald-300">✓ Pris en compte dans les effets du familier</span></span>;
-    const names = (item.monster_cards || []).map((effect) => gameData.effects.find((entry) => entry.vnum === effect.BCardVNUM)?.name).filter(Boolean);
+    const names = (item.monster_cards || []).map((effect) => gameData.effects.find((entry) => entry.vnum === effect.BCardVNUM)?.name).filter((name) => name && !/^not\s*use$/i.test(name.trim()));
     return names.length ? `Buff · ${[...new Set(names)].slice(0, 3).join(" · ")}` : "Buff passif du familier";
   };
   useEffect(() => {
@@ -499,14 +499,13 @@ export default function DamageCalculator() {
   const bySlot = (slot) => equipmentItems.filter((item) => item.equipment_slot === slot);
   const jewellery = { necklace: bySlot(6), ring: bySlot(7), bracelet: bySlot(8) };
   const defensiveGear = { armor: bySlot(1), hat: bySlot(2), gloves: bySlot(3), boots: bySlot(4), mask: bySlot(9) };
-  const permanent = (items) => items.filter((item) => /\(permanent\)/i.test(item.name || ""));
-  const cosmetics = { costume: permanent(bySlot(13)), costumeHat: permanent(bySlot(14)), weaponSkin: permanent(bySlot(15)), wings: permanent(bySlot(16)), miniPet: permanent(bySlot(17)), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
+  const cosmeticsFor = (slot) => [...bySlot(slot)].sort((left, right) => Number(/\(permanent\)/i.test(right.name || "")) - Number(/\(permanent\)/i.test(left.name || "")) || (left.name || "").localeCompare(right.name || "", "fr"));
+  const cosmetics = { costume: cosmeticsFor(13), costumeHat: cosmeticsFor(14), weaponSkin: cosmeticsFor(15), wings: cosmeticsFor(16), miniPet: cosmeticsFor(17), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
   const appliedEffects = [
     ...selectedCombatCards,
     ...selectedDebuffs,
     ...selectedPartnerBuffs,
     ...selectedPetBlessings,
-    ...Object.values(selectedEquipment).filter(Boolean),
   ];
   const companionBreakdown = [...selectedPartnerBuffs, ...selectedPetBlessings].map((buff) => {
     const attack = (buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
@@ -585,12 +584,12 @@ export default function DamageCalculator() {
       const costumeMatches = gameData.items.filter((item) => [13, 14, 15, 16, 17].includes(item.equipment_slot) && fuzzyIncludes(costumeSource, item.name)).sort((a, b) => b.name.length - a.name.length);
       costumeMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(item.name); } });
       if (Object.keys(selections).length) setEquipment((old) => ({ ...old, ...selections }));
-      const fairyItems = gameData.items.filter((item) => /fée|fee|drone à vapeur|drone a vapeur/i.test(item.name || "") && fuzzyIncludes(fairySource, item.name)).slice(0, 8).map((item) => { const name = normalizeText(item.name); const start = fairySource.indexOf(name); const nextDrone = fairySource.indexOf("drone a vapeur", start + name.length); const window = fairySource.slice(Math.max(0, start), nextDrone > start ? nextDrone : start + 500); const percent = window.match(/(?:\+\s*\d+\s*)?(\d{2,3})\s*%/); const critical = window.match(/probabilite de coup critique augmente de (\d{1,3})/); const attack = window.match(/toutes les attaques augmentent de (\d{1,3})/); const elementIncrease = window.match(/element de la fee equipee augmente de (\d{1,3})/); return { ...item, percent: Number(percent?.[1] || 0), criticalChance: Number(critical?.[1] || 0), attackPercent: Number(attack?.[1] || 0), elementIncrease: Number(elementIncrease?.[1] || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : "none" }; });
+      const fairyItems = gameData.items.filter((item) => /^drone à vapeur de l[’']élément (eau|lumière|feu|obscurité)$/i.test((item.name || "").trim()) && fairySource.includes(normalizeText(item.name))).slice(0, 4).map((item) => { const name = normalizeText(item.name); const start = fairySource.indexOf(name); const nextDrone = fairySource.indexOf("drone a vapeur", start + name.length); const window = fairySource.slice(Math.max(0, start), nextDrone > start ? nextDrone : start + 500); const percent = window.match(/(?:\+\s*\d+\s*)?(\d{2,3})\s*%/); const critical = window.match(/probabilite de coup critique augmente de (\d{1,3})/); const attack = window.match(/toutes les attaques augmentent de (\d{1,3})/); const elementIncrease = window.match(/element de la fee equipee augmente de (\d{1,3})/); return { ...item, percent: Number(percent?.[1] || 0), criticalChance: Number(critical?.[1] || 0), attackPercent: Number(attack?.[1] || 0), elementIncrease: Number(elementIncrease?.[1] || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : "none" }; });
       setOcrFairies(fairyItems); if (fairyItems.length) matches.push(`${fairyItems.length} fées reconnues`);
-      const detectedPartners = partnerSpecialists.filter((item) => fuzzyIncludes(companionSource, item.name));
-      if (detectedPartners.length) { setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => item.name).join(", ")}`); }
+      const detectedPartners = partnerSpecialists.filter((item) => companionSource.includes(normalizeText(item.name))).filter((item) => { const start = companionSource.indexOf(normalizeText(item.name)); return /note\s*[f-s]/i.test(companionSource.slice(start, start + 160)); });
+      if (detectedPartners.length) { const ranks = {}; detectedPartners.forEach((item) => { const start = companionSource.indexOf(normalizeText(item.name)); ranks[String(item.vnum)] = (companionSource.slice(start, start + 160).match(/note\s*([f-s])/i)?.[1] || "S").toUpperCase(); }); setPartnerRanks((old) => ({ ...old, ...ranks })); setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => `${item.name} (rang ${ranks[String(item.vnum)]})`).join(", ")}`); }
       const partnerNames = detectedPartners.map((item) => normalizeText(item.name));
-      const detectedPets = pets.filter((item) => !partnerNames.some((name) => fuzzyIncludes(normalizeText(item.name), name)) && fuzzyIncludes(companionSource, item.name)).slice(0, 8);
+      const detectedPets = pets.filter((item) => item.name && !/^not\s*use$/i.test(item.name.trim()) && !partnerNames.includes(normalizeText(item.name)) && companionSource.includes(normalizeText(item.name))).slice(0, 8);
       if (detectedPets.length) { setPetIds(detectedPets.map((item) => String(item.vnum))); matches.push(`Familiers : ${detectedPets.map((item) => item.name).join(", ")}`); }
       const detectedBooks = bookItems.filter((item) => fuzzyIncludes(bookSource, item.name));
       if (detectedBooks.length) { setCharacterPassiveIds(detectedBooks.map((item) => String(item.vnum))); matches.push(`${detectedBooks.length} livres reconnus`); }
