@@ -10,14 +10,14 @@ export const ELEMENTS = {
 
 // Bonus officiels d'amélioration d'arme utilisés par le jeu. Le bonus est
 // appliqué à l'attaque de l'arme avant la défense de la cible.
-export const WEAPON_UPGRADE_BONUS = [0, 10, 15, 22, 32, 43, 54, 65, 90, 120, 200];
+export const WEAPON_UPGRADE_BONUS = [0, 10, 15, 22, 32, 43, 54, 65, 90, 120, 200, 225, 245, 300];
 
 export function calculateDamage(input) {
   const attackMin = Math.max(0, Number(input.attackMin) || 0);
   const attackMax = Math.max(attackMin, Number(input.attackMax) || attackMin);
   const skillPower = Math.max(0, Number(input.skillPower) || 0);
   const flatAttack = Math.max(0, Number(input.flatAttack) || 0);
-  const weaponUpgrade = clamp(input.weaponUpgrade, 0, 10);
+  const weaponUpgrade = clamp(input.weaponUpgrade, 0, 13);
   const monsterDefenceUpgrade = Math.max(0, Number(input.monsterDefenceUpgrade) || 0);
   const attackUpgradeDifference = Math.max(0, weaponUpgrade - monsterDefenceUpgrade);
   const defenceUpgradeDifference = Math.max(0, monsterDefenceUpgrade - weaponUpgrade);
