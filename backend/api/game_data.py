@@ -1,11 +1,12 @@
 import html
 import json
 import re
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -118,6 +119,33 @@ def synchronize(
     _user=Depends(require_roles("superadmin")),
 ):
     return {"ok": True, "counts": sync_all(db)}
+
+
+@router.post("/ocr-character-sheet")
+async def ocr_character_sheet(file: UploadFile = File(...)):
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=415, detail="Le fichier doit être une image.")
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="L’image est vide.")
+    if len(payload) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="L’image dépasse 12 Mo.")
+    try:
+        result = subprocess.run(
+            ["tesseract", "stdin", "stdout", "-l", "fra", "--psm", "6", "preserve_interword_spaces=1"],
+            input=payload,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=90,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="La lecture OCR a dépassé 90 secondes.") from exc
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()[-500:] or "Tesseract n’a pas pu lire l’image."
+        raise HTTPException(status_code=422, detail=detail)
+    text = result.stdout.decode("utf-8", errors="replace")
+    return {"text": text, "lines": [line.strip() for line in text.splitlines() if line.strip()]}
 
 
 @router.get("/partner-specialists/{vnum}")
