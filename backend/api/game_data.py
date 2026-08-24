@@ -148,9 +148,12 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail=detail)
     text = result.stdout.decode("utf-8", errors="replace")
     header_numbers = []
+    identity_texts = []
+    header_text = ""
     try:
         image = Image.open(io.BytesIO(payload))
-        header = image.crop((int(image.width * 0.70), 0, image.width, int(image.height * 0.055)))
+
+        header = image.crop((int(image.width * 0.68), 0, image.width, int(image.height * 0.06)))
         header = header.resize((header.width * 4, header.height * 4), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         header.save(output, format="PNG")
@@ -158,10 +161,29 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
             ["tesseract", "stdin", "stdout", "-l", "eng", "--psm", "6", "-c", "tessedit_char_whitelist=0123456789 "],
             input=output.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False,
         )
-        header_numbers = [int(value) for value in re.findall(r"\\b\\d{1,3}\\b", header_result.stdout.decode("utf-8", errors="replace"))][-3:]
+        header_text = header_result.stdout.decode("utf-8", errors="replace")
+        header_numbers = [int(value) for value in re.findall(r"\b\d{1,3}\b", header_text)][-3:]
+
+        identity = image.crop((0, 0, int(image.width * 0.70), int(image.height * 0.06)))
+        identity = identity.resize((identity.width * 4, identity.height * 4), Image.Resampling.LANCZOS)
+        identity_output = io.BytesIO()
+        identity.save(identity_output, format="PNG")
+        for psm in (11, 6):
+            identity_result = subprocess.run(
+                ["tesseract", "stdin", "stdout", "-l", "fra", "--psm", str(psm)],
+                input=identity_output.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False,
+            )
+            identity_texts.append(identity_result.stdout.decode("utf-8", errors="replace"))
     except Exception:
         header_numbers = []
-    return {"text": text, "lines": [line.strip() for line in text.splitlines() if line.strip()], "header_numbers": header_numbers}
+        identity_texts = []
+    return {
+        "text": text,
+        "lines": [line.strip() for line in text.splitlines() if line.strip()],
+        "header_numbers": header_numbers,
+        "header_text": header_text,
+        "identity_texts": identity_texts,
+    }
 
 
 @router.get("/partner-specialists/{vnum}")
