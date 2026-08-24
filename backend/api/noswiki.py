@@ -37,7 +37,10 @@ def _translations(dataset: str):
 def _rows(kind: str, records: list, translations: dict):
     for record in records:
         vnum = record.get("Vnum")
-        if vnum is None:
+        # NosWiki contient quelques lignes techniques VNum 0 (notamment trois
+        # cartes sans identité). Elles ne représentent aucun objet du jeu et
+        # ne peuvent pas partager notre clé fonctionnelle kind/VNum.
+        if vnum is None or int(vnum) <= 0:
             continue
         name_code = record.get("NameCode") or ""
         yield {
@@ -98,4 +101,3 @@ def sync_kind(db, kind: str):
 
 def sync_all(db):
     return {kind: sync_kind(db, kind) for kind in SOURCES}
-
