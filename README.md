@@ -887,4 +887,4 @@ docker compose exec -T postgres sh -lc \
 ## 14. Résumé ultra-court
 
 **PandoraHearts Family** est un dashboard full-stack pour suivre les membres d’une famille Nostale à partir de snapshots GEXP, avec historique, fiches joueurs, gestion des rôles/statuts et outils d’administration.
-
+- Le calculateur PvE peut importer les fiches personnage structurées par OCR (équipement, SP, fées et passifs).
