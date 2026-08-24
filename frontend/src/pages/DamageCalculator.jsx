@@ -604,7 +604,16 @@ export default function DamageCalculator() {
       }
       setOcrState((old) => ({ ...old, progress: 15, message: "Envoi sécurisé au lecteur OCR…" }));
       const ocrPayload = new FormData(); ocrPayload.append("file", file);
-      const ocrResponse = await fetch("/api/game-data/ocr-character-sheet", { method: "POST", body: ocrPayload });
+      let ocrResponse;
+      try {
+        ocrResponse = await fetch("/api/game-data/ocr-character-sheet", { method: "POST", body: ocrPayload });
+      } catch (proxyError) {
+        ocrResponse = null;
+      }
+      if (!ocrResponse || ocrResponse.status >= 500) {
+        const directPayload = new FormData(); directPayload.append("file", file);
+        ocrResponse = await fetch(`${API_BASE}/game-data/ocr-character-sheet`, { method: "POST", body: directPayload });
+      }
       if (!ocrResponse.ok) throw new Error((await ocrResponse.json().catch(() => null))?.detail || "Le lecteur OCR est indisponible.");
       const ocrResult = await ocrResponse.json();
       const data = { text: ocrResult.text || "" };
