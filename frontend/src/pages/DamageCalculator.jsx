@@ -646,14 +646,14 @@ export default function DamageCalculator() {
       if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
       const equipmentRegions = Object.fromEntries(Object.entries(ocrResult.regions?.equipment || {}).map(([slot, text]) => [slot, normalizeText(text)]));
       const itemMatches = gameData.items.filter((item) => item.name && fuzzyIncludes(equipmentSource, item.name)).sort((a, b) => b.name.length - a.name.length);
-      const regionalItem = (slot, equipmentSlot) => gameData.items.filter((item) => item.name && item.item_type === 0 && item.equipment_slot === equipmentSlot && item.class_id === detectedMask && fuzzyIncludes(equipmentRegions[slot] || "", item.name)).sort((a, b) => b.name.length - a.name.length)[0];
+      const regionalItem = (slot, equipmentSlot) => gameData.items.filter((item) => item.name && item.equipment_slot === equipmentSlot && item.class_id === detectedMask && (equipmentSlot === 1 ? Number(item.item_type) === 1 : Number(item.item_type) === 0) && fuzzyIncludes(equipmentRegions[slot] || "", item.name)).sort((a, b) => b.name.length - a.name.length)[0];
       const main = regionalItem("main", 0) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
       const secondary = regionalItem("secondary", 5) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
       if (main) { setMainWeaponVnum(String(main.vnum)); matches.push(`Arme : ${main.name}`); }
       if (secondary) { setSecondaryWeaponVnum(String(secondary.vnum)); matches.push(`Arme secondaire : ${secondary.name}`); }
       const itemWindow = (item, length = 650, slot = "") => { if (equipmentRegions[slot]) return equipmentRegions[slot]; const name = normalizeText(item?.name || ""); const start = equipmentSource.indexOf(name); return start >= 0 ? equipmentSource.slice(start, start + length) : ""; };
       const upgradeFrom = (item, slot) => Number(itemWindow(item, 650, slot).match(/(?:\+ )?(\d{1,2}) (?:phenomenal|ancestral|utile|bon|bonne|mysterieux)/)?.[1] || 0);
-      const armor = regionalItem("armor", 1) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 1 && item.class_id === detectedMask);
+      const armor = regionalItem("armor", 1) || itemMatches.find((item) => Number(item.item_type) === 1 && item.equipment_slot === 1 && item.class_id === detectedMask);
       const upgrades = { main: upgradeFrom(main, "main"), secondary: upgradeFrom(secondary, "secondary"), armor: upgradeFrom(armor, "armor") }; setEquipmentUpgrades(upgrades);
       if (upgrades.main) setStats((old) => ({ ...old, weaponUpgrade: Math.min(13, upgrades.main) }));
       const monsterRune = equipmentSource.match(/degats augmentes sur les monstres (\d{1,3})/);
