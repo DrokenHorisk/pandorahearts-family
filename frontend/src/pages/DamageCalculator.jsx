@@ -215,8 +215,8 @@ export default function DamageCalculator() {
   }), [stats, runic, spDraft, heroicSetActive, dragonTarget, companionAttackPercent, petAttackPercent, combatCardAttackPercent, automaticAttackPercent]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
-    const specialist = loadedProfile.specialists.find((item) => item.id === nextSpecialist) || loadedProfile.specialists[0];
-    const selectedFairy = nextFairy || specialist.defaultFairy;
+    const specialist = loadedProfile.specialists.find((item) => item.id === (nextSpecialist || loadedProfile.configuration?.specialistId)) || loadedProfile.specialists[0];
+    const selectedFairy = nextFairy || loadedProfile.configuration?.fairyId || specialist.defaultFairy;
     const fairy = loadedProfile.fairies.find((item) => item.id === selectedFairy) || loadedProfile.fairies[0];
     setSpecialistId(specialist.id);
     setFairyId(fairy.id);
@@ -239,7 +239,26 @@ export default function DamageCalculator() {
       elementPower: loadedProfile.weapon.spElement + specialist.element,
       weaponUpgrade: loadedProfile.weapon.upgrade || 0,
       attackType: (loadedProfile.character.className || "").toLowerCase() === "mage" ? "magic" : (loadedProfile.character.className || "").toLowerCase() === "escrimeur" ? "melee" : "ranged",
+      ...(loadedProfile.configuration?.stats || {}),
     }));
+    const saved = loadedProfile.configuration;
+    if (saved) {
+      if (saved.className) setClassName(saved.className);
+      if (saved.mainWeaponVnum) setMainWeaponVnum(String(saved.mainWeaponVnum));
+      if (saved.secondaryWeaponVnum) setSecondaryWeaponVnum(String(saved.secondaryWeaponVnum));
+      if (saved.equipment) setEquipment((old) => ({ ...old, ...saved.equipment }));
+      if (saved.equipmentUpgrades) setEquipmentUpgrades((old) => ({ ...old, ...saved.equipmentUpgrades }));
+      if (saved.runic) setRunic((old) => ({ ...old, ...saved.runic }));
+      if (saved.runeDraft) setRuneDraft((old) => ({ ...old, ...saved.runeDraft }));
+      if (saved.fairyDraft) setFairyDraft(saved.fairyDraft);
+      if (saved.monsterId) setMonsterId(String(saved.monsterId));
+      if (saved.skillId) setSkillId(String(saved.skillId));
+      if (saved.specialistCardVnum) setSpecialistCardVnum(String(saved.specialistCardVnum));
+      setBuffIds(saved.buffIds || []); setDebuffIds(saved.debuffIds || []);
+      setTattooIds(saved.tattooIds || []); setTattooLevels(saved.tattooLevels || {});
+      setPartnerIds(saved.partnerIds || []); setPartnerRanks(saved.partnerRanks || {});
+      setPetIds(saved.petIds || []); setCharacterPassiveIds(saved.characterPassiveIds || []); setFamilyPassiveIds(saved.familyPassiveIds || []);
+    }
   };
 
   useEffect(() => {
@@ -253,7 +272,7 @@ export default function DamageCalculator() {
       .then((data) => {
         if (!data?.profile) return setProfileStatus("missing");
         setProfile(data.profile);
-        applyProfile(data.profile, data.profile.specialists[0]?.id);
+        applyProfile(data.profile);
         setProfileStatus("loaded");
       })
       .catch(() => setProfileStatus("error"));
@@ -348,6 +367,7 @@ export default function DamageCalculator() {
   };
   const saveCurrentConfiguration = async () => {
     if (!profile || !getToken()) return;
+    const savedFairy = fairyDraft ? { id: fairyDraft.id || fairyId || "custom-fairy", name: fairyDraft.name || "Fée personnalisée", vnum: Number(fairyDraft.vnum || 0), element: fairyDraft.element || stats.attackElement, percent: Number(fairyDraft.percent || 0), attackPercent: Number(fairyDraft.attackPercent || 0), criticalChance: Number(fairyDraft.criticalChance || 0), elementIncrease: Number(fairyDraft.elementIncrease || 0) } : null;
     const updated = {
       ...profile,
       combat: { ...profile.combat, attackMin: stats.attackMin, attackMax: stats.attackMax, criticalChance: stats.criticalChance, criticalDamage: stats.criticalDamage },
@@ -356,6 +376,14 @@ export default function DamageCalculator() {
       equipmentUpgrades: { armor: equipmentUpgrades.armor },
       equipmentSelections: equipment,
       specialists: profile.specialists.map((specialist) => specialist.id === specialistId ? { ...specialist, ...spDraft, cardVnum: Number(specialistCardVnum) || specialist.cardVnum } : specialist),
+      fairies: savedFairy ? profile.fairies.map((fairy) => fairy.id === fairyId ? { ...fairy, ...savedFairy, id: fairy.id } : fairy) : profile.fairies,
+      configuration: {
+        className, mainWeaponVnum, secondaryWeaponVnum, equipment, equipmentUpgrades,
+        stats: { ...stats }, runic: { ...runic }, runeDraft: { ...(runeDraft || {}) }, fairyDraft: savedFairy,
+        monsterId, skillId, specialistCardVnum, specialistId, fairyId,
+        buffIds, debuffIds, tattooIds, tattooLevels, partnerIds, partnerRanks, petIds,
+        characterPassiveIds, familyPassiveIds,
+      },
     };
     setSaveStatus("saving");
     try {
@@ -522,7 +550,7 @@ export default function DamageCalculator() {
     setMainWeaponVnum(String(profile.weapon.vnum || ""));
     setSecondaryWeaponVnum(String(profile.secondaryWeapon?.vnum || ""));
     if (profile.equipmentSelections) setEquipment((old) => ({ ...old, ...profile.equipmentSelections }));
-    if (isDroken) {
+    if (isDroken && !profile.configuration) {
       setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
       setEquipmentUpgrades({ main: 9, secondary: 0, armor: 8 });
       setEquipment((old) => ({ ...old, necklace: "8856", ring: "8853", bracelet: "8850", gloves: "8844", boots: "8846", mask: "8894", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" }));
@@ -672,7 +700,7 @@ export default function DamageCalculator() {
             {profile && <div className="mt-1 text-sm text-[#cbb8dc]">{profile.weapon.name} +{profile.weapon.upgrade} · {profile.weapon.rarity}</div>}
           </div>
           <span className="rounded-xl border border-[#4c3561] bg-[#140b20] px-4 py-2.5 text-sm font-bold text-[#c8b4d8]">{profileStatus === "loaded" ? "✓ Profil privé chargé" : profileStatus === "loading" ? "Chargement…" : "Profil privé indisponible"}</span>
-          {profile && <div className="flex gap-2"><button type="button" onClick={saveCurrentConfiguration} className="rounded-xl bg-[#6f3d98] px-3 py-2 text-xs font-black text-white">{saveStatus === "saving" ? "Sauvegarde…" : saveStatus === "saved" ? "✓ Configuration sauvegardée" : "Sauvegarder ma configuration"}</button><button type="button" onClick={() => { setProfileDraft(JSON.stringify(profile)); setEditingProfile(true); }} className="rounded-xl border border-[#5b3d72] bg-[#241331] px-3 py-2 text-xs font-bold text-[#cdb6dd]">JSON avancé</button></div>}
+          {profile && <div className="flex gap-2"><button type="button" onClick={saveCurrentConfiguration} className="rounded-xl bg-[#6f3d98] px-3 py-2 text-xs font-black text-white">{saveStatus === "saving" ? "Sauvegarde complète…" : saveStatus === "saved" ? "✓ Toute la configuration est sauvegardée" : "Sauvegarder toute la configuration"}</button><button type="button" onClick={() => { setProfileDraft(JSON.stringify(profile)); setEditingProfile(true); }} className="rounded-xl border border-[#5b3d72] bg-[#241331] px-3 py-2 text-xs font-bold text-[#cdb6dd]">JSON avancé</button></div>}
         </div>
         {profile && <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-bold uppercase text-[#a991bd]">Spécialiste<select value={specialistId} onChange={selectSpecialist} className={fieldClass}>{profile.specialists.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} +{sp.upgrade} · perf. {sp.perfection}</option>)}<option value="custom">✦ SP personnalisée</option></select></label>
