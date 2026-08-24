@@ -94,3 +94,18 @@ jobs:
           echo "Production health check failed" >&2
           docker compose logs --tail=100 backend frontend
           exit 1
+
+      - name: Synchronize NosWiki game database
+        run: |
+          set -euo pipefail
+          timeout 10m docker compose exec -T backend python - <<'PY'
+          from api.db import SessionLocal
+          from api.noswiki import sync_all
+
+          db = SessionLocal()
+          try:
+              counts = sync_all(db)
+              print("NosWiki synchronized:", counts)
+          finally:
+              db.close()
+          PY
