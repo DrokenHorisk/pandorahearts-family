@@ -58,3 +58,61 @@ jobs:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  deploy-production:
+    if: github.event_name == 'push'
+    needs: test-build
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
+    concurrency:
+      group: pandorahearts-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+        working-directory: /home/droken/pandorahearts
+    steps:
+      - name: Verify production directory
+        run: |
+          set -euo pipefail
+          test -f docker-compose.yml
+          test -d .git
+          docker compose config --quiet
+
+      - name: Backup PostgreSQL
+        run: |
+          set -euo pipefail
+          backup_dir=/home/droken/pandorahearts-backups
+          mkdir -p "$backup_dir"
+          backup_file="$backup_dir/pandorahearts_$(date +%Y%m%d_%H%M%S).sql"
+          docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_file"
+          test -s "$backup_file"
+          echo "Backup created: $backup_file"
+
+      - name: Update source safely
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+
+      - name: Build and restart services
+        run: |
+          set -euo pipefail
+          docker compose up -d --build
+
+      - name: Verify production
+        run: |
+          set -euo pipefail
+          docker compose ps
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8000/health >/dev/null \
+              && curl --fail --silent http://127.0.0.1:3001/calculator >/dev/null; then
+              echo "Production is healthy"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Production health check failed" >&2
+          docker compose logs --tail=100 backend frontend
+          exit 1
