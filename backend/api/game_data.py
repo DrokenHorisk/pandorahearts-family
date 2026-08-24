@@ -150,7 +150,7 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
     header_numbers = []
     try:
         image = Image.open(io.BytesIO(payload))
-        header = image.crop((int(image.width * 0.68), 0, image.width, int(image.height * 0.07)))
+        header = image.crop((int(image.width * 0.70), 0, image.width, int(image.height * 0.055)))
         header = header.resize((header.width * 4, header.height * 4), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         header.save(output, format="PNG")
