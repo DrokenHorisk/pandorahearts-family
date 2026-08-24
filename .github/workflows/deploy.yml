@@ -8,11 +8,9 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: "pages-${{ github.ref }}"
+  group: "ci-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -25,11 +23,6 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Configure GitHub Pages
-        if: github.event_name == 'push'
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
@@ -41,24 +34,6 @@ jobs:
         env:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: npm run build
-      - name: Upload Pages artifact
-        if: github.event_name == 'push'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: frontend/dist
-
-  deploy:
-    if: github.event_name == 'push'
-    needs: test-build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
   deploy-production:
     if: github.event_name == 'push'
     needs: test-build
