@@ -50,6 +50,9 @@ export default function DamageCalculator() {
   const [profile, setProfile] = useState(null);
   const [profileStatus, setProfileStatus] = useState(isDroken ? "loading" : "idle");
   const [profileDraft, setProfileDraft] = useState("");
+  const [spDraft, setSpDraft] = useState(null);
+  const [fairyDraft, setFairyDraft] = useState(null);
+  const [runeDraft, setRuneDraft] = useState(null);
   const result = useMemo(() => calculateDamage(stats), [stats]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
@@ -58,6 +61,9 @@ export default function DamageCalculator() {
     const fairy = loadedProfile.fairies.find((item) => item.id === selectedFairy) || loadedProfile.fairies[0];
     setSpecialistId(specialist.id);
     setFairyId(fairy.id);
+    setSpDraft({ ...specialist });
+    setFairyDraft({ ...fairy });
+    setRuneDraft({ ...loadedProfile.weapon, criticalDamage: loadedProfile.weapon.criticalDamage ?? loadedProfile.weapon.criticalChance ?? 0 });
     setClassName((loadedProfile.character.className || "archer").toLowerCase());
     setStats((old) => ({
       ...old,
@@ -66,7 +72,8 @@ export default function DamageCalculator() {
       attackMax: loadedProfile.combat.attackMax,
       flatAttack: loadedProfile.weapon.flatAttack,
       attackPercent: loadedProfile.weapon.attackPercent + fairy.attackPercent,
-      criticalChance: Math.min(100, loadedProfile.weapon.criticalChance + fairy.criticalChance),
+      criticalChance: Math.min(100, fairy.criticalChance),
+      criticalDamage: loadedProfile.weapon.criticalDamage ?? loadedProfile.weapon.criticalChance ?? 0,
       attackElement: fairy.element,
       fairyElement: fairy.percent,
       elementPower: loadedProfile.weapon.spElement + specialist.element,
@@ -90,8 +97,49 @@ export default function DamageCalculator() {
       .catch(() => setProfileStatus("error"));
   }, [isDroken]);
 
-  const selectSpecialist = (event) => applyProfile(profile, event.target.value);
-  const selectFairy = (event) => applyProfile(profile, specialistId, event.target.value);
+  const selectSpecialist = (event) => {
+    if (event.target.value === "custom") {
+      const custom = { id: "custom", name: "SP personnalisée", upgrade: 0, perfection: 0, attack: 0, defence: 0, element: 0, hpMp: 0, pvePerfection: 0, pvpPerfection: 0 };
+      setSpecialistId("custom");
+      setSpDraft(custom);
+      setStats((old) => ({ ...old, elementPower: profile.weapon.spElement }));
+      return;
+    }
+    applyProfile(profile, event.target.value);
+  };
+  const selectFairy = (event) => {
+    const fairy = profile.fairies.find((item) => item.id === event.target.value);
+    if (!fairy) return;
+    setFairyId(fairy.id);
+    setFairyDraft({ ...fairy });
+    setStats((old) => ({
+      ...old,
+      attackElement: fairy.element,
+      fairyElement: fairy.percent,
+      attackPercent: profile.weapon.attackPercent + fairy.attackPercent,
+      criticalChance: Math.min(100, fairy.criticalChance),
+    }));
+  };
+  const updateSpDraft = (key) => (event) => {
+    const value = Number(event.target.value);
+    setSpDraft((old) => ({ ...old, [key]: value }));
+    if (key === "element") setStats((old) => ({ ...old, elementPower: (profile?.weapon.spElement || 0) + value }));
+  };
+  const updateFairyDraft = (key) => (event) => {
+    const value = Number(event.target.value);
+    setFairyDraft((old) => ({ ...old, [key]: value }));
+    if (key === "percent") setStats((old) => ({ ...old, fairyElement: value }));
+    if (key === "attackPercent") setStats((old) => ({ ...old, attackPercent: (profile?.weapon.attackPercent || 0) + value }));
+    if (key === "criticalChance") setStats((old) => ({ ...old, criticalChance: Math.min(100, value) }));
+  };
+  const updateRuneDraft = (key) => (event) => {
+    const value = Number(event.target.value);
+    setRuneDraft((old) => ({ ...old, [key]: value }));
+    if (key === "flatAttack") setStats((old) => ({ ...old, flatAttack: value }));
+    if (key === "attackPercent") setStats((old) => ({ ...old, attackPercent: value + (fairyDraft?.attackPercent || 0) }));
+    if (key === "criticalDamage") setStats((old) => ({ ...old, criticalDamage: value }));
+    if (key === "spElement") setStats((old) => ({ ...old, elementPower: value + (spDraft?.element || 0) }));
+  };
   const savePrivateProfile = async () => {
     try {
       const parsed = JSON.parse(profileDraft);
@@ -144,10 +192,41 @@ export default function DamageCalculator() {
           <span className="rounded-xl border border-[#4c3561] bg-[#140b20] px-4 py-2.5 text-sm font-bold text-[#c8b4d8]">{profileStatus === "loaded" ? "✓ Profil privé chargé" : profileStatus === "loading" ? "Chargement…" : "Profil privé indisponible"}</span>
         </div>
         {profile && <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-xs font-bold uppercase text-[#a991bd]">Spécialiste<select value={specialistId} onChange={selectSpecialist} className={fieldClass}>{profile.specialists.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} +{sp.upgrade} · perf. {sp.perfection}</option>)}</select></label>
+          <label className="text-xs font-bold uppercase text-[#a991bd]">Spécialiste<select value={specialistId} onChange={selectSpecialist} className={fieldClass}>{profile.specialists.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} +{sp.upgrade} · perf. {sp.perfection}</option>)}<option value="custom">✦ SP personnalisée</option></select></label>
           <label className="text-xs font-bold uppercase text-[#a991bd]">Fée<select value={fairyId} onChange={selectFairy} className={fieldClass}>{profile.fairies.map((fairy) => <option key={fairy.id} value={fairy.id}>{fairy.name} · {fairy.percent}%</option>)}</select></label>
         </div>}
-        {profile && specialistId && (() => { const sp = profile.specialists.find((item) => item.id === specialistId); return sp && <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-6">{[["Attaque", sp.attack], ["Défense", sp.defence], ["Élément", sp.element], ["HP/MP", sp.hpMp], ["PVE", sp.pvePerfection], ["Perfection", sp.perfection]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#3b2852] bg-[#12091d] p-3 text-center"><div className="text-[10px] font-bold uppercase text-[#9f89b1]">{label}</div><div className="mt-1 text-xl font-black text-[#eadcf5]">{value}</div></div>)}</div>; })()}
+        {profile && spDraft && <div className="mt-4">
+          <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points et perfection de la SP — modifiables</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+            <Field label="Attaque" value={spDraft.attack} onChange={updateSpDraft("attack")} />
+            <Field label="Défense" value={spDraft.defence} onChange={updateSpDraft("defence")} />
+            <Field label="Élément" value={spDraft.element} onChange={updateSpDraft("element")} />
+            <Field label="HP/MP" value={spDraft.hpMp} onChange={updateSpDraft("hpMp")} />
+            <Field label="Amélioration" value={spDraft.upgrade} onChange={updateSpDraft("upgrade")} max={20} />
+            <Field label="Perfection" value={spDraft.perfection} onChange={updateSpDraft("perfection")} max={100} />
+            <Field label="PVE" value={spDraft.pvePerfection} onChange={updateSpDraft("pvePerfection")} />
+            <Field label="PVP" value={spDraft.pvpPerfection || 0} onChange={updateSpDraft("pvpPerfection")} />
+          </div>
+        </div>}
+        {profile && fairyDraft && <div className="mt-4">
+          <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Options de la fée — modifiables</div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Pourcentage de fée" value={fairyDraft.percent} onChange={updateFairyDraft("percent")} suffix="%" max={200} />
+            <Field label="Toutes les attaques" value={fairyDraft.attackPercent} onChange={updateFairyDraft("attackPercent")} suffix="%" />
+            <Field label="Chance critique" value={fairyDraft.criticalChance} onChange={updateFairyDraft("criticalChance")} suffix="%" max={100} />
+          </div>
+        </div>}
+        {profile && runeDraft && <div className="mt-4">
+          <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Rune et options d’équipement — modifiables</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Field label="Attaque fixe" value={runeDraft.flatAttack || 0} onChange={updateRuneDraft("flatAttack")} />
+            <Field label="Toutes attaques" value={runeDraft.attackPercent || 0} onChange={updateRuneDraft("attackPercent")} suffix="%" />
+            <Field label="Dégâts critiques" value={runeDraft.criticalDamage || 0} onChange={updateRuneDraft("criticalDamage")} suffix="%" />
+            <Field label="Attaque SP" value={runeDraft.spAttack || 0} onChange={updateRuneDraft("spAttack")} />
+            <Field label="Élément SP" value={runeDraft.spElement || 0} onChange={updateRuneDraft("spElement")} />
+            <Field label="Dégâts monstres" value={stats.monsterDamage} onChange={number(setStats, "monsterDamage")} suffix="%" />
+          </div>
+        </div>}
         {profileStatus === "missing" && <div className="mt-4 rounded-xl border border-[#4b3460] bg-[#12091d] p-4">
           <label className="block text-xs font-bold uppercase text-[#a991bd]">Initialisation privée du profil
             <textarea data-testid="private-profile-json" value={profileDraft} onChange={(event) => setProfileDraft(event.target.value)} className="mt-2 h-24 w-full rounded-lg border border-[#3b2852] bg-[#0d0615] p-3 font-mono text-xs text-[#d9c7e7] outline-none focus:border-[#9b6bcc]" placeholder="Données JSON du profil" />
@@ -169,8 +248,9 @@ export default function DamageCalculator() {
             <div className="grid gap-3 sm:grid-cols-3"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Attaque min." value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque max." value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
             {profile && <p className="mt-3 rounded-xl border border-[#4a335f] bg-[#12091d] p-3 text-xs text-[#b9a4ca]">Valeurs privées DrokenA chargées automatiquement. Elles restent modifiables pour simuler un autre équipement.</p>}
           </Section>
-          <Section icon="⚔️" title="Arme et compétence">
+          <Section icon="🔮" title="Rune, options d’arme et compétence">
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Compétence<select value={skillId} onChange={selectSkill} className={fieldClass}>{SKILLS.map((skill) => <option key={skill.id} value={skill.id}>{skill.icon} {skill.name}</option>)}</select></label>
+            <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Effets de rune et options cumulés — modifiables</div>
             <div className="grid gap-3 sm:grid-cols-3"><Field label="Puissance skill" value={stats.skillPower} onChange={number(setStats, "skillPower")} /><Field label="Attaque fixe" value={stats.flatAttack} onChange={number(setStats, "flatAttack")} /><Field label="Toutes attaques" value={stats.attackPercent} onChange={number(setStats, "attackPercent")} suffix="%" min={-100} /></div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Dégâts monstres" value={stats.monsterDamage} onChange={number(setStats, "monsterDamage")} suffix="%" min={-100} /><Field label="Chance critique" value={stats.criticalChance} onChange={number(setStats, "criticalChance")} suffix="%" max={100} /><Field label="Dégâts critiques" value={stats.criticalDamage} onChange={number(setStats, "criticalDamage")} suffix="%" /></div>
           </Section>
