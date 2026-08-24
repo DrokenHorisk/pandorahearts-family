@@ -19,6 +19,33 @@ const fieldClass = "mt-1 w-full rounded-xl border border-[#3b2852] bg-[#12091d] 
 const number = (setter, key) => (event) => setter((old) => ({ ...old, [key]: Number(event.target.value) }));
 const cleanSpecialistName = (name = "") => name.replace(/^Carte de spécialiste (?:de l'|des |du |de |d’)/i, "").replace(/\s*\(Limité\)$/i, "").trim();
 const normalizeText = (value = "") => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const editDistance = (left, right) => {
+  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) { let previous = row[0]; row[0] = i; for (let j = 1; j <= right.length; j += 1) { const old = row[j]; row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (left[i - 1] === right[j - 1] ? 0 : 1)); previous = old; } }
+  return row[right.length];
+};
+const fuzzyIncludes = (source, candidate) => {
+  const name = normalizeText(candidate);
+  if (name.length >= 5 && source.includes(name)) return true;
+  const wanted = name.split(" ").filter((token) => token.length >= 4);
+  if (!wanted.length) return false;
+  const available = source.split(" ");
+  const hits = wanted.filter((token) => available.some((word) => Math.abs(word.length - token.length) <= 2 && editDistance(word, token) <= Math.max(1, Math.ceil(token.length * 0.22))));
+  const required = wanted.length === 1 ? 1 : Math.max(wanted.length >= 4 ? 3 : 2, Math.ceil(wanted.length * 0.7));
+  return hits.length >= required;
+};
+const prepareOcrImage = async (file) => {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.max(2, 1700 / bitmap.width);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let index = 0; index < frame.data.length; index += 4) { const grey = 0.299 * frame.data[index] + 0.587 * frame.data[index + 1] + 0.114 * frame.data[index + 2]; const contrasted = Math.max(0, Math.min(255, (grey - 128) * 1.45 + 128)); frame.data[index] = contrasted; frame.data[index + 1] = contrasted; frame.data[index + 2] = contrasted; }
+  context.putImageData(frame, 0, 0);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+};
 const describeEffect = (effect) => {
   const type = Number(effect.BCardVNUM ?? effect.Type ?? effect.BCardType);
   const sub = Number(effect.BCardSub ?? effect.SubType ?? effect.BCardSubType);
@@ -122,10 +149,11 @@ export default function DamageCalculator() {
   const [bookCategory, setBookCategory] = useState("attaque");
   const [runic, setRunic] = useState({ flatAttack: 0, monsterDamage: 0, criticalChance: 0, criticalDamage: 0, dragonDamage: 0, fairyElement: 0, spAttack: 0, spElement: 0, attackPercent: 0 });
   const [heroicJewels, setHeroicJewels] = useState({ necklace: false, ring: false, bracelet: false });
-  const [equipment, setEquipment] = useState({ necklace: "", ring: "", bracelet: "", hat: "", mask: "", gloves: "", boots: "", costume: "", costumeHat: "", weaponSkin: "", wings: "", miniPet: "", title: "" });
+  const [equipment, setEquipment] = useState({ armor: "", necklace: "", ring: "", bracelet: "", hat: "", mask: "", gloves: "", boots: "", costume: "", costumeHat: "", weaponSkin: "", wings: "", miniPet: "", title: "" });
   const [saveStatus, setSaveStatus] = useState("");
   const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
   const [ocrState, setOcrState] = useState({ status: "idle", progress: 0, message: "", matches: [] });
+  const [ocrSpecialists, setOcrSpecialists] = useState([]);
   const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
   const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
@@ -435,7 +463,7 @@ export default function DamageCalculator() {
   });
   const bySlot = (slot) => equipmentItems.filter((item) => item.equipment_slot === slot);
   const jewellery = { necklace: bySlot(6), ring: bySlot(7), bracelet: bySlot(8) };
-  const defensiveGear = { hat: bySlot(2), gloves: bySlot(3), boots: bySlot(4), mask: bySlot(9) };
+  const defensiveGear = { armor: bySlot(1), hat: bySlot(2), gloves: bySlot(3), boots: bySlot(4), mask: bySlot(9) };
   const permanent = (items) => items.filter((item) => /\(permanent\)/i.test(item.name || ""));
   const cosmetics = { costume: permanent(bySlot(13)), costumeHat: permanent(bySlot(14)), weaponSkin: permanent(bySlot(15)), wings: permanent(bySlot(16)), miniPet: permanent(bySlot(17)), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
   const appliedEffects = [
@@ -465,29 +493,39 @@ export default function DamageCalculator() {
     if (!file.type.startsWith("image/")) return setOcrState({ status: "error", progress: 0, message: "Le fichier doit être une image.", matches: [] });
     setOcrState({ status: "reading", progress: 0, message: "Préparation de l’image…", matches: [] });
     try {
-      const { recognize } = await import("tesseract.js");
-      const { data } = await recognize(file, "fra", { logger: ({ status, progress = 0 }) => setOcrState((old) => ({ ...old, status: "reading", progress: Math.round(progress * 100), message: status === "recognizing text" ? "Lecture de la fiche…" : "Chargement du moteur OCR…" })) });
+      const tesseract = await import("tesseract.js");
+      const recognize = tesseract.recognize || tesseract.default?.recognize;
+      const preparedImage = await prepareOcrImage(file);
+      const { data } = await recognize(preparedImage, "fra", { logger: ({ status, progress = 0 }) => setOcrState((old) => ({ ...old, status: "reading", progress: Math.round(progress * 100), message: status === "recognizing text" ? "Lecture de la fiche…" : "Amélioration de l’image…" })) });
       const source = normalizeText(data.text);
       const matches = [];
-      const detectedClass = ["aventurier", "escrimeur", "archer", "mage"].find((name) => source.includes(name));
+      const header = source.slice(0, Math.min(400, source.indexOf("equipements") > 0 ? source.indexOf("equipements") : 400));
+      const detectedClass = ["escrimeur", "archer", "mage", "aventurier"].find((name) => new RegExp(`(?:^| )${name}(?: |$)`).test(header));
       const detectedMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[detectedClass] || classMask;
       if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
       const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
       if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
-      const itemMatches = gameData.items.filter((item) => { const name = normalizeText(cleanSpecialistName(item.name)); return name.length >= 7 && source.includes(name); }).sort((a, b) => b.name.length - a.name.length);
+      const itemMatches = gameData.items.filter((item) => fuzzyIncludes(source, cleanSpecialistName(item.name))).sort((a, b) => b.name.length - a.name.length);
       const main = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
       const secondary = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
       if (main) { setMainWeaponVnum(String(main.vnum)); matches.push(`Arme : ${main.name}`); }
       if (secondary) { setSecondaryWeaponVnum(String(secondary.vnum)); matches.push(`Arme secondaire : ${secondary.name}`); }
-      const card = itemMatches.find((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === detectedMask);
-      if (card) { selectSpecialistCard(String(card.vnum)); matches.push(`SP : ${cleanSpecialistName(card.name)}`); }
-      const slotKeys = { 6: "necklace", 7: "ring", 8: "bracelet", 2: "hat", 9: "mask", 3: "gloves", 4: "boots", 13: "costume", 14: "costumeHat", 15: "weaponSkin", 16: "wings", 17: "miniPet" };
+      const cards = itemMatches.filter((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === detectedMask).map((card) => {
+        const cardName = normalizeText(cleanSpecialistName(card.name)); const start = source.indexOf(cardName); const window = start >= 0 ? source.slice(start, start + 240) : ""; const values = window.match(/(?:\+ )?(\d{1,2}) perfection (\d{1,3})/);
+        return { ...card, upgrade: Number(values?.[1] || 0), perfection: Number(values?.[2] || 0) };
+      });
+      setOcrSpecialists(cards);
+      if (cards[0]) { selectSpecialistCard(String(cards[0].vnum)); setSpDraft((old) => ({ ...(old || {}), upgrade: cards[0].upgrade, perfection: cards[0].perfection })); matches.push(`${cards.length} SP reconnue${cards.length > 1 ? "s" : ""}`); }
+      const slotKeys = { 1: "armor", 6: "necklace", 7: "ring", 8: "bracelet", 2: "hat", 9: "mask", 3: "gloves", 4: "boots", 13: "costume", 14: "costumeHat", 15: "weaponSkin", 16: "wings", 17: "miniPet" };
       const selections = {};
       itemMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
       if (Object.keys(selections).length) setEquipment((old) => ({ ...old, ...selections }));
-      const upgrade = source.match(/(?:amelioration|carte de specialiste)[^\d]{0,30}(?:\+\s*)?(\d{1,2})/);
-      const perfection = source.match(/perfection(?:nement)?[^\d]{0,20}(\d{1,3})/);
-      if (upgrade || perfection) setSpDraft((old) => ({ ...(old || {}), ...(upgrade ? { upgrade: Number(upgrade[1]) } : {}), ...(perfection ? { perfection: Number(perfection[1]) } : {}) }));
+      const detectedPartners = partnerSpecialists.filter((item) => fuzzyIncludes(source, item.name));
+      if (detectedPartners.length) { setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => item.name).join(", ")}`); }
+      const detectedPets = pets.filter((item) => fuzzyIncludes(source, item.name)).slice(0, 8);
+      if (detectedPets.length) { setPetIds(detectedPets.map((item) => String(item.vnum))); matches.push(`Familiers : ${detectedPets.map((item) => item.name).join(", ")}`); }
+      const detectedBooks = bookItems.filter((item) => fuzzyIncludes(source, item.name));
+      if (detectedBooks.length) { setCharacterPassiveIds(detectedBooks.map((item) => String(item.vnum))); matches.push(`${detectedBooks.length} livres reconnus`); }
       setOcrState({ status: "done", progress: 100, message: `${matches.length} éléments reconnus et appliqués. Vérifie les sélections avant de sauvegarder.`, matches: [...new Set(matches)].slice(0, 16) });
     } catch (error) {
       setOcrState({ status: "error", progress: 0, message: "La lecture a échoué. Utilise une fiche complète, non redimensionnée et bien nette.", matches: [] });
@@ -648,7 +686,7 @@ export default function DamageCalculator() {
         <div className="space-y-5">
           <Section icon="🧤" title="Résistances et équipement défensif">
             <p className="mb-3 text-xs text-[#9f89b1]">Chaque emplacement est filtré selon son véritable type dans les données du jeu.</p>
-            <div className="grid gap-3 sm:grid-cols-2"><EquipmentPicker label="Chapeau" items={defensiveGear.hat} value={equipment.hat} onChange={(value) => setEquipment((old) => ({ ...old, hat: value }))} /><EquipmentPicker label="Masque supplémentaire" items={defensiveGear.mask} value={equipment.mask} onChange={(value) => setEquipment((old) => ({ ...old, mask: value }))} /><EquipmentPicker label="Gants" items={defensiveGear.gloves} value={equipment.gloves} onChange={(value) => setEquipment((old) => ({ ...old, gloves: value }))} /><EquipmentPicker label="Bottes" items={defensiveGear.boots} value={equipment.boots} onChange={(value) => setEquipment((old) => ({ ...old, boots: value }))} /></div>
+            <div className="grid gap-3 sm:grid-cols-2"><EquipmentPicker label="Armure" items={defensiveGear.armor} value={equipment.armor} onChange={(value) => setEquipment((old) => ({ ...old, armor: value }))} /><EquipmentPicker label="Chapeau" items={defensiveGear.hat} value={equipment.hat} onChange={(value) => setEquipment((old) => ({ ...old, hat: value }))} /><EquipmentPicker label="Masque supplémentaire" items={defensiveGear.mask} value={equipment.mask} onChange={(value) => setEquipment((old) => ({ ...old, mask: value }))} /><EquipmentPicker label="Gants" items={defensiveGear.gloves} value={equipment.gloves} onChange={(value) => setEquipment((old) => ({ ...old, gloves: value }))} /><EquipmentPicker label="Bottes" items={defensiveGear.boots} value={equipment.boots} onChange={(value) => setEquipment((old) => ({ ...old, boots: value }))} /></div>
           </Section>
           <Section icon="👗" title="Costumes et apparences">
             <div className="grid gap-3 sm:grid-cols-2"><EquipmentPicker label="Costume" items={cosmetics.costume} value={equipment.costume} onChange={(value) => setEquipment((old) => ({ ...old, costume: value }))} /><EquipmentPicker label="Chapeau de costume" items={cosmetics.costumeHat} value={equipment.costumeHat} onChange={(value) => setEquipment((old) => ({ ...old, costumeHat: value }))} /><EquipmentPicker label="Apparence d’arme" items={cosmetics.weaponSkin} value={equipment.weaponSkin} onChange={(value) => setEquipment((old) => ({ ...old, weaponSkin: value }))} /><EquipmentPicker label="Ailes de costume" items={cosmetics.wings} value={equipment.wings} onChange={(value) => setEquipment((old) => ({ ...old, wings: value }))} /><EquipmentPicker label="Mini-familier" items={cosmetics.miniPet} value={equipment.miniPet} onChange={(value) => setEquipment((old) => ({ ...old, miniPet: value }))} /><EquipmentPicker label="Titre" items={cosmetics.title} value={equipment.title} onChange={(value) => setEquipment((old) => ({ ...old, title: value }))} /></div>
@@ -700,6 +738,7 @@ export default function DamageCalculator() {
               {ocrState.status === "reading" && <div className="mx-auto mt-3 h-2 max-w-md overflow-hidden rounded-full bg-[#291638]"><div className="h-full bg-[#b06fdd] transition-all" style={{ width: `${ocrState.progress}%` }} /></div>}
               {ocrState.message && <p className={`mt-3 text-xs ${ocrState.status === "error" ? "text-rose-300" : ocrState.status === "done" ? "text-emerald-300" : "text-[#bda5cf]"}`}>{ocrState.message}</p>}
               {!!ocrState.matches.length && <div className="mt-3 flex flex-wrap justify-center gap-2">{ocrState.matches.map((match) => <span key={match} className="rounded-lg border border-[#49315d] bg-[#1c1028] px-2 py-1 text-[11px] text-[#d7c4e5]">✓ {match}</span>)}</div>}
+              {!!ocrSpecialists.length && <div className="mt-4 border-t border-[#39254d] pt-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Spécialistes reconnues</div><div className="flex flex-wrap justify-center gap-2">{ocrSpecialists.map((card) => <button type="button" key={card.vnum} onClick={() => { selectSpecialistCard(String(card.vnum)); setSpDraft((old) => ({ ...(old || {}), upgrade: card.upgrade, perfection: card.perfection })); }} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs ${specialistCardVnum === String(card.vnum) ? "border-[#bd82e8] bg-[#4e2a6c] text-white" : "border-[#49315d] bg-[#1c1028] text-[#d7c4e5]"}`}><GameIcon src={card.icon_url} className="h-8 w-8 object-contain" /><span><strong className="block">{cleanSpecialistName(card.name)}</strong><span className="text-[10px] text-[#a991bd]">+{card.upgrade} · perfection {card.perfection}</span></span></button>)}</div></div>}
             </div>
           </Section>
         </div>
