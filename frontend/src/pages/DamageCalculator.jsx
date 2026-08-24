@@ -251,7 +251,7 @@ export default function DamageCalculator() {
       if (saved.equipmentUpgrades) setEquipmentUpgrades((old) => ({ ...old, ...saved.equipmentUpgrades }));
       if (saved.runic) setRunic((old) => ({ ...old, ...saved.runic }));
       if (saved.runeDraft) setRuneDraft((old) => ({ ...old, ...saved.runeDraft }));
-      if (saved.fairyDraft) setFairyDraft(saved.fairyDraft);
+      if (saved.fairyDraft) { const name = normalizeText(saved.fairyDraft.name || ""); const element = saved.fairyDraft.element || (name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : ""); const vnum = Number(saved.fairyDraft.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[element]) || 0); setFairyDraft({ ...saved.fairyDraft, element, vnum }); }
       if (saved.monsterId) setMonsterId(String(saved.monsterId));
       if (saved.skillId) setSkillId(String(saved.skillId));
       if (saved.specialistCardVnum) setSpecialistCardVnum(String(saved.specialistCardVnum));
