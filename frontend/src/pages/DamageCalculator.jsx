@@ -602,10 +602,14 @@ export default function DamageCalculator() {
         setOcrState({ status: "error", progress: 0, message: "Fiche DrokenA reconnue. Connecte-toi avec le compte Droken pour restaurer sa configuration privée complète.", matches: ["Référence DrokenA vérifiée"] });
         return;
       }
-      const tesseract = await import("tesseract.js");
-      const recognize = tesseract.recognize || tesseract.default?.recognize;
-      const preparedImage = await prepareOcrImage(file);
-      const { data } = await recognize(preparedImage, "fra", { logger: ({ status, progress = 0 }) => setOcrState((old) => ({ ...old, status: "reading", progress: Math.round(progress * 100), message: status === "recognizing text" ? "Lecture de la fiche…" : "Amélioration de l’image…" })) });
+      setOcrState((old) => ({ ...old, progress: 15, message: "Envoi sécurisé au lecteur OCR…" }));
+      const ocrPayload = new FormData(); ocrPayload.append("file", file);
+      const ocrResponse = await fetch(`${API_BASE}/game-data/ocr-character-sheet`, { method: "POST", body: ocrPayload });
+      if (!ocrResponse.ok) throw new Error((await ocrResponse.json().catch(() => null))?.detail || "Le lecteur OCR est indisponible.");
+      const ocrResult = await ocrResponse.json();
+      const data = { text: ocrResult.text || "" };
+      if (!data.text.trim()) throw new Error("Aucun texte n’a été reconnu sur cette fiche.");
+      setOcrState((old) => ({ ...old, progress: 70, message: "Association des objets et des valeurs…" }));
       const source = normalizeText(data.text);
       const matches = [];
       const equipmentSource = between(source, "equipements", "fees");
@@ -646,10 +650,7 @@ export default function DamageCalculator() {
         return { ...card, upgrade: Number(values?.[1] || 0), perfection: Number(values?.[2] || 0) };
       });
       if (cards.length) {
-        const tesseractModule = await import("tesseract.js"); const createWorker = tesseractModule.createWorker || tesseractModule.default?.createWorker;
-        const numberWorker = await createWorker("eng"); await numberWorker.setParameters({ tessedit_char_whitelist: "0123456789 ", tessedit_pageseg_mode: "6", preserve_interword_spaces: "1" });
-        const numericSheet = await prepareSpecialistNumbersImage(file, cards.length); const numeric = await numberWorker.recognize(numericSheet); await numberWorker.terminate();
-        const rows = numeric.data.text.split(/\n/).map((line) => (line.match(/\d{1,3}/g) || []).map(Number).filter((value) => value <= 150)).filter((values) => values.length);
+        const rows = (ocrResult.lines || []).map((line) => (line.match(/\d{1,3}/g) || []).map(Number).filter((value) => value <= 150)).filter((values) => values.length >= 4);
         cards = cards.map((card, index) => { const improvement = rows[index * 3] || []; const perfectionPoints = rows[index * 3 + 1] || []; const resistances = rows[index * 3 + 2] || []; return { ...card, attack: improvement[0] || 0, defence: improvement[1] || 0, element: improvement[2] || 0, hpMp: improvement[3] || 0, perfectionStats: [perfectionPoints[0] || 0, perfectionPoints[1] || 0, perfectionPoints[2] || 0, perfectionPoints[3] || 0], perfectionResistances: [resistances[0] || 0, resistances[1] || 0, resistances[2] || 0, resistances[3] || 0] }; });
       }
       if (isDrokenSheet) {
