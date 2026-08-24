@@ -1,5 +1,7 @@
 name: Test, build and deploy frontend
 
+# Production deploys are serialized and always back up PostgreSQL first.
+
 on:
   workflow_dispatch:
   pull_request:
