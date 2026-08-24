@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { HashRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import HistoryDashboard from "./pages/HistoryDashboard";
 import PlayerDashboard from "./pages/PlayerDashboard";
@@ -48,8 +48,7 @@ function Shell() {
 }
 
 export default function App() {
-  const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
-  return <BrowserRouter basename={basename}><Shell /></BrowserRouter>;
+  return <HashRouter><Shell /></HashRouter>;
 }
 
 function TabButton({ active, children, ...props }) {
