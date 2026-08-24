@@ -46,6 +46,20 @@ const prepareOcrImage = async (file) => {
   context.putImageData(frame, 0, 0);
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 };
+const cropOcrImage = async (file, left, top, width, height) => {
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  const scale = 4;
+  canvas.width = Math.round(bitmap.width * width * scale); canvas.height = Math.round(bitmap.height * height * scale);
+  const context = canvas.getContext("2d");
+  context.filter = "grayscale(1) contrast(1.8)";
+  context.drawImage(bitmap, bitmap.width * left, bitmap.height * top, bitmap.width * width, bitmap.height * height, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+};
+const between = (source, start, end) => {
+  const from = source.indexOf(start); const to = source.indexOf(end, Math.max(0, from + start.length));
+  return source.slice(from >= 0 ? from : 0, to > from ? to : source.length);
+};
 const describeEffect = (effect) => {
   const type = Number(effect.BCardVNUM ?? effect.Type ?? effect.BCardType);
   const sub = Number(effect.BCardSub ?? effect.SubType ?? effect.BCardSubType);
@@ -154,6 +168,7 @@ export default function DamageCalculator() {
   const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
   const [ocrState, setOcrState] = useState({ status: "idle", progress: 0, message: "", matches: [] });
   const [ocrSpecialists, setOcrSpecialists] = useState([]);
+  const [ocrFairies, setOcrFairies] = useState([]);
   const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
   const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
@@ -372,6 +387,11 @@ export default function DamageCalculator() {
     const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType];
     setStats((old) => ({ ...old, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence }));
   };
+  const applyOcrSpecialist = (card) => {
+    selectSpecialistCard(String(card.vnum));
+    setSpDraft((old) => ({ ...(old || {}), ...card }));
+    setStats((old) => ({ ...old, elementPower: Number(profile?.weapon?.spElement || 0) + Number(card.element || 0) + Number(card.perfectionStats?.[2] || 0) }));
+  };
 
   const classMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[className];
   const classWeapons = gameData.items.filter((item) => item.item_type === 0 && item.class_id === classMask);
@@ -499,32 +519,60 @@ export default function DamageCalculator() {
       const { data } = await recognize(preparedImage, "fra", { logger: ({ status, progress = 0 }) => setOcrState((old) => ({ ...old, status: "reading", progress: Math.round(progress * 100), message: status === "recognizing text" ? "Lecture de la fiche…" : "Amélioration de l’image…" })) });
       const source = normalizeText(data.text);
       const matches = [];
+      const equipmentSource = between(source, "equipements", "fees");
+      const fairySource = between(source, "fees", "specialistes");
+      const specialistSource = between(source, "specialistes", "costumes");
+      const costumeSource = between(source, "costumes", "familiers");
+      const companionSource = between(source, "familiers", "livres");
+      const bookSource = source.includes("livres") ? source.slice(source.indexOf("livres")) : "";
       const header = source.slice(0, Math.min(400, source.indexOf("equipements") > 0 ? source.indexOf("equipements") : 400));
       const detectedClass = ["escrimeur", "archer", "mage", "aventurier"].find((name) => new RegExp(`(?:^| )${name}(?: |$)`).test(header));
       const detectedMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[detectedClass] || classMask;
       if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
       const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
       if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
-      const itemMatches = gameData.items.filter((item) => fuzzyIncludes(source, cleanSpecialistName(item.name))).sort((a, b) => b.name.length - a.name.length);
+      const itemMatches = gameData.items.filter((item) => fuzzyIncludes(equipmentSource, item.name)).sort((a, b) => b.name.length - a.name.length);
       const main = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
       const secondary = itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
       if (main) { setMainWeaponVnum(String(main.vnum)); matches.push(`Arme : ${main.name}`); }
       if (secondary) { setSecondaryWeaponVnum(String(secondary.vnum)); matches.push(`Arme secondaire : ${secondary.name}`); }
-      const cards = itemMatches.filter((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === detectedMask).map((card) => {
-        const cardName = normalizeText(cleanSpecialistName(card.name)); const start = source.indexOf(cardName); const window = start >= 0 ? source.slice(start, start + 240) : ""; const values = window.match(/(?:\+ )?(\d{1,2}) perfection (\d{1,3})/);
+      const mainWindow = main ? equipmentSource.slice(Math.max(0, equipmentSource.indexOf(normalizeText(main.name))), Math.max(0, equipmentSource.indexOf(normalizeText(main.name))) + 500) : equipmentSource;
+      const weaponUpgrade = mainWindow.match(/(?:\+ )?(\d{1,2}) (?:phenomenal|ancestral|utile|bonne)/);
+      if (weaponUpgrade) setStats((old) => ({ ...old, weaponUpgrade: Math.min(13, Number(weaponUpgrade[1])) }));
+      const monsterRune = equipmentSource.match(/degats augmentes sur les monstres (\d{1,3})/);
+      const criticalRune = equipmentSource.match(/probabilite d un coup critique augmente (\d{1,3})/);
+      const increasedRune = equipmentSource.match(/les degats augmentent (\d{1,3})/);
+      const spAttackRune = equipmentSource.match(/statistiques d attaque sp augmentent (\d{1,3})/);
+      setRunic((old) => ({ ...old, ...(monsterRune ? { monsterDamage: Number(monsterRune[1]) } : {}), ...(criticalRune ? { criticalChance: Number(criticalRune[1]) } : {}), ...(spAttackRune ? { spAttack: Number(spAttackRune[1]) } : {}) }));
+      if (increasedRune) setStats((old) => ({ ...old, increasedDamagePercent: Number(increasedRune[1]) }));
+      const classCards = gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === detectedMask);
+      let cards = classCards.filter((item) => specialistSource.includes(normalizeText(cleanSpecialistName(item.name)))).sort((left, right) => specialistSource.indexOf(normalizeText(cleanSpecialistName(left.name))) - specialistSource.indexOf(normalizeText(cleanSpecialistName(right.name)))).map((card) => {
+        const cardName = normalizeText(cleanSpecialistName(card.name)); const start = specialistSource.indexOf(cardName); const nextCard = specialistSource.indexOf("carte de specialiste", start + cardName.length); const window = specialistSource.slice(start, nextCard > start ? nextCard : start + 600); const values = window.match(/(?:\+ )?(\d{1,2}) perfection (\d{1,3})/);
         return { ...card, upgrade: Number(values?.[1] || 0), perfection: Number(values?.[2] || 0) };
       });
+      if (cards.length) {
+        const tesseractModule = await import("tesseract.js"); const createWorker = tesseractModule.createWorker || tesseractModule.default?.createWorker;
+        const numberWorker = await createWorker("eng"); await numberWorker.setParameters({ tessedit_char_whitelist: "0123456789 " });
+        const enriched = [];
+        for (let index = 0; index < cards.length; index += 1) { const crop = await cropOcrImage(file, 0.67, 0.365 + index * 0.0433, 0.31, 0.043); const numeric = await numberWorker.recognize(crop); const values = (numeric.data.text.match(/\d{1,3}/g) || []).map(Number).filter((value) => value <= 150); enriched.push({ ...cards[index], attack: values[0] || 0, defence: values[1] || 0, element: values[2] || 0, hpMp: values[3] || 0, perfectionStats: values.length >= 8 ? values.slice(-4) : [0, 0, 0, 0] }); }
+        await numberWorker.terminate(); cards = enriched;
+      }
       setOcrSpecialists(cards);
-      if (cards[0]) { selectSpecialistCard(String(cards[0].vnum)); setSpDraft((old) => ({ ...(old || {}), upgrade: cards[0].upgrade, perfection: cards[0].perfection })); matches.push(`${cards.length} SP reconnue${cards.length > 1 ? "s" : ""}`); }
+      if (cards[0]) { applyOcrSpecialist(cards[0]); matches.push(`${cards.length} SP reconnue${cards.length > 1 ? "s" : ""}`); }
       const slotKeys = { 1: "armor", 6: "necklace", 7: "ring", 8: "bracelet", 2: "hat", 9: "mask", 3: "gloves", 4: "boots", 13: "costume", 14: "costumeHat", 15: "weaponSkin", 16: "wings", 17: "miniPet" };
       const selections = {};
-      itemMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
+      itemMatches.filter((item) => [1, 2, 3, 4, 6, 7, 8, 9].includes(item.equipment_slot)).forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
+      const costumeMatches = gameData.items.filter((item) => [13, 14, 15, 16, 17].includes(item.equipment_slot) && fuzzyIncludes(costumeSource, item.name)).sort((a, b) => b.name.length - a.name.length);
+      costumeMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(item.name); } });
       if (Object.keys(selections).length) setEquipment((old) => ({ ...old, ...selections }));
-      const detectedPartners = partnerSpecialists.filter((item) => fuzzyIncludes(source, item.name));
+      const fairyItems = gameData.items.filter((item) => /fée|fee|drone à vapeur|drone a vapeur/i.test(item.name || "") && fuzzyIncludes(fairySource, item.name)).slice(0, 8).map((item) => { const name = normalizeText(item.name); const start = fairySource.indexOf(name); const window = fairySource.slice(Math.max(0, start), start >= 0 ? start + 300 : 0); const percent = window.match(/(?:\+\s*\d+\s*)?(\d{2,3})\s*%/); return { ...item, percent: Number(percent?.[1] || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : "none" }; });
+      setOcrFairies(fairyItems); if (fairyItems.length) matches.push(`${fairyItems.length} fées reconnues`);
+      const detectedPartners = partnerSpecialists.filter((item) => fuzzyIncludes(companionSource, item.name));
       if (detectedPartners.length) { setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => item.name).join(", ")}`); }
-      const detectedPets = pets.filter((item) => fuzzyIncludes(source, item.name)).slice(0, 8);
+      const partnerNames = detectedPartners.map((item) => normalizeText(item.name));
+      const detectedPets = pets.filter((item) => !partnerNames.some((name) => fuzzyIncludes(normalizeText(item.name), name)) && fuzzyIncludes(companionSource, item.name)).slice(0, 8);
       if (detectedPets.length) { setPetIds(detectedPets.map((item) => String(item.vnum))); matches.push(`Familiers : ${detectedPets.map((item) => item.name).join(", ")}`); }
-      const detectedBooks = bookItems.filter((item) => fuzzyIncludes(source, item.name));
+      const detectedBooks = bookItems.filter((item) => fuzzyIncludes(bookSource, item.name));
       if (detectedBooks.length) { setCharacterPassiveIds(detectedBooks.map((item) => String(item.vnum))); matches.push(`${detectedBooks.length} livres reconnus`); }
       setOcrState({ status: "done", progress: 100, message: `${matches.length} éléments reconnus et appliqués. Vérifie les sélections avant de sauvegarder.`, matches: [...new Set(matches)].slice(0, 16) });
     } catch (error) {
@@ -738,7 +786,8 @@ export default function DamageCalculator() {
               {ocrState.status === "reading" && <div className="mx-auto mt-3 h-2 max-w-md overflow-hidden rounded-full bg-[#291638]"><div className="h-full bg-[#b06fdd] transition-all" style={{ width: `${ocrState.progress}%` }} /></div>}
               {ocrState.message && <p className={`mt-3 text-xs ${ocrState.status === "error" ? "text-rose-300" : ocrState.status === "done" ? "text-emerald-300" : "text-[#bda5cf]"}`}>{ocrState.message}</p>}
               {!!ocrState.matches.length && <div className="mt-3 flex flex-wrap justify-center gap-2">{ocrState.matches.map((match) => <span key={match} className="rounded-lg border border-[#49315d] bg-[#1c1028] px-2 py-1 text-[11px] text-[#d7c4e5]">✓ {match}</span>)}</div>}
-              {!!ocrSpecialists.length && <div className="mt-4 border-t border-[#39254d] pt-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Spécialistes reconnues</div><div className="flex flex-wrap justify-center gap-2">{ocrSpecialists.map((card) => <button type="button" key={card.vnum} onClick={() => { selectSpecialistCard(String(card.vnum)); setSpDraft((old) => ({ ...(old || {}), upgrade: card.upgrade, perfection: card.perfection })); }} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs ${specialistCardVnum === String(card.vnum) ? "border-[#bd82e8] bg-[#4e2a6c] text-white" : "border-[#49315d] bg-[#1c1028] text-[#d7c4e5]"}`}><GameIcon src={card.icon_url} className="h-8 w-8 object-contain" /><span><strong className="block">{cleanSpecialistName(card.name)}</strong><span className="text-[10px] text-[#a991bd]">+{card.upgrade} · perfection {card.perfection}</span></span></button>)}</div></div>}
+              {!!ocrSpecialists.length && <div className="mt-4 border-t border-[#39254d] pt-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Spécialistes reconnues</div><div className="flex flex-wrap justify-center gap-2">{ocrSpecialists.map((card) => <button type="button" key={card.vnum} onClick={() => applyOcrSpecialist(card)} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs ${specialistCardVnum === String(card.vnum) ? "border-[#bd82e8] bg-[#4e2a6c] text-white" : "border-[#49315d] bg-[#1c1028] text-[#d7c4e5]"}`}><GameIcon src={card.icon_url} className="h-8 w-8 object-contain" /><span><strong className="block">{cleanSpecialistName(card.name)}</strong><span className="text-[10px] text-[#a991bd]">+{card.upgrade} · perfection {card.perfection} · {card.attack}/{card.defence}/{card.element}/{card.hpMp}</span></span></button>)}</div></div>}
+              {!!ocrFairies.length && <div className="mt-4 border-t border-[#39254d] pt-3"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Fées reconnues</div><div className="flex flex-wrap justify-center gap-2">{ocrFairies.map((fairy) => <button type="button" key={fairy.vnum} onClick={() => { setFairyDraft(fairy); setStats((old) => ({ ...old, attackElement: fairy.element, fairyElement: fairy.percent || old.fairyElement })); }} className="flex items-center gap-2 rounded-lg border border-[#49315d] bg-[#1c1028] px-2 py-1.5 text-left text-xs text-[#d7c4e5]"><GameIcon src={fairy.icon_url} className="h-8 w-8 object-contain" /><span><strong className="block">{fairy.name}</strong><span className="text-[10px] text-[#a991bd]">{fairy.percent || "?"}% · cliquer pour utiliser</span></span></button>)}</div></div>}
             </div>
           </Section>
         </div>
