@@ -61,6 +61,11 @@ function MultiDataPicker({ label, items, values, onChange, placeholder = "Recher
   </div>;
 }
 
+function EquipmentPicker({ label, items, value, onChange }) {
+  const selected = items.find((item) => String(item.vnum) === value);
+  return <label className="block text-xs font-bold uppercase text-[#a991bd]">{label}<div className="mt-1 flex items-center gap-2">{selected?.icon_url ? <img src={selected.icon_url} alt="" className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /> : <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-[#3b2852] bg-[#0d0615]">✦</span>}<select value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass}><option value="">Aucun</option>{items.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}{item.hero_level ? ` · H${item.hero_level}` : ""}</option>)}</select></div>{selected?.effect_summary && <span className="mt-1 block text-[10px] font-normal normal-case text-emerald-300">{selected.effect_summary}</span>}</label>;
+}
+
 export default function DamageCalculator() {
   const user = getUser();
   const isDroken = user?.username?.toLowerCase() === "droken";
@@ -88,17 +93,26 @@ export default function DamageCalculator() {
   const [partnerRanks, setPartnerRanks] = useState({});
   const [partnerData, setPartnerData] = useState({});
   const [petIds, setPetIds] = useState([]);
-  const [petRanks, setPetRanks] = useState({});
   const [characterPassiveIds, setCharacterPassiveIds] = useState([]);
   const [familyPassiveIds, setFamilyPassiveIds] = useState([]);
   const [showEffectDetails, setShowEffectDetails] = useState(true);
   const [bookCategory, setBookCategory] = useState("attaque");
   const [runic, setRunic] = useState({ flatAttack: 0, monsterDamage: 0, criticalChance: 0, criticalDamage: 0, dragonDamage: 0, fairyElement: 0, spAttack: 0, spElement: 0, attackPercent: 0 });
   const [heroicJewels, setHeroicJewels] = useState({ necklace: false, ring: false, bracelet: false });
+  const [equipment, setEquipment] = useState({ necklace: "", ring: "", bracelet: "", gloves: "", boots: "", costume: "", costumeHat: "", weaponSkin: "", wings: "", miniPet: "", title: "" });
+  const [saveStatus, setSaveStatus] = useState("");
   const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
-  const heroicSetActive = Object.values(heroicJewels).every(Boolean);
+  const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
+  const heroicSetActive = [selectedEquipment.necklace, selectedEquipment.ring, selectedEquipment.bracelet].every((item) => [94, 96, 98].includes(Number(item?.hero_level))) || Object.values(heroicJewels).every(Boolean);
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
   const dragonTarget = currentMonster?.name?.toLowerCase().includes("dragon");
+  const selectedPartnerBuffs = partnerIds.map((id) => {
+    const partner = gameData.items.find((item) => String(item.vnum) === id);
+    const rank = partnerRanks[id] || "S";
+    const baseName = (partner?.name || "").replace(/\s*\(Limité\)$/i, "").trim();
+    return gameData.buffs.find((buff) => buff.name === `Aura de ${baseName} (${rank})`) || gameData.buffs.find((buff) => buff.name === `Bénédiction de ${baseName} (${rank})`);
+  }).filter(Boolean);
+  const companionAttackPercent = selectedPartnerBuffs.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const result = useMemo(() => calculateDamage({
     ...stats,
     flatAttack: stats.flatAttack + runic.flatAttack,
@@ -107,9 +121,9 @@ export default function DamageCalculator() {
     criticalDamage: stats.criticalDamage + runic.criticalDamage,
     fairyElement: stats.fairyElement + runic.fairyElement,
     elementPower: stats.elementPower + runic.spElement,
-    attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0),
+    attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent,
     runicAttack: stats.runicAttack + runic.spAttack,
-  }), [stats, runic, heroicSetActive, dragonTarget]);
+  }), [stats, runic, heroicSetActive, dragonTarget, companionAttackPercent]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === nextSpecialist) || loadedProfile.specialists[0];
@@ -240,6 +254,24 @@ export default function DamageCalculator() {
       setProfileStatus("error");
     }
   };
+  const saveCurrentConfiguration = async () => {
+    if (!profile || !getToken()) return;
+    const updated = {
+      ...profile,
+      combat: { ...profile.combat, attackMin: stats.attackMin, attackMax: stats.attackMax, criticalChance: stats.criticalChance, criticalDamage: stats.criticalDamage },
+      weapon: { ...profile.weapon, upgrade: stats.weaponUpgrade, vnum: Number(mainWeaponVnum) || profile.weapon.vnum },
+      secondaryWeapon: { ...(profile.secondaryWeapon || {}), vnum: Number(secondaryWeaponVnum) || profile.secondaryWeapon?.vnum },
+      equipmentSelections: equipment,
+    };
+    setSaveStatus("saving");
+    try {
+      const response = await fetch(`${API_BASE}/calculator/profile`, { method: "PUT", headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" }, body: JSON.stringify({ profile: updated }) });
+      if (!response.ok) throw new Error("save");
+      setProfile(updated);
+      setRuneDraft((old) => ({ ...old, upgrade: stats.weaponUpgrade }));
+      setSaveStatus("saved");
+    } catch { setSaveStatus("error"); }
+  };
   const selectMonster = (event) => {
     const id = event.target.value;
     const monster = gameData.monsters.find((item) => String(item.vnum) === id) || MONSTERS.find((item) => item.id === id);
@@ -281,10 +313,11 @@ export default function DamageCalculator() {
   const selectedSecondaryWeapon = secondaryWeapons.find((item) => String(item.vnum) === secondaryWeaponVnum);
   const selectedMonster = currentMonster;
   const monsterLocked = Boolean(selectedMonster);
-  const combatBuffs = gameData.buffs.filter((item) => item.buff_type === 0);
+  const tattooSkills = gameData.skills.filter((item) => item.class_id === 27);
+  const tattooCardIds = new Set(tattooSkills.flatMap((skill) => skill.buffs || []).filter((effect) => effect.Type === 25 && effect.Value2).map((effect) => Math.floor(Math.abs(effect.Value2) / 10)));
+  const combatBuffs = gameData.buffs.filter((item) => item.buff_type === 0 && !tattooCardIds.has(item.vnum) && !/^Aura de Nézarun bienveillant|^Bénédiction de Lumi$/i.test(item.name || ""));
   const targetDebuffs = gameData.buffs.filter((item) => item.buff_type === 2);
   const selectedDebuffs = targetDebuffs.filter((item) => debuffIds.includes(String(item.vnum)));
-  const tattooSkills = gameData.skills.filter((item) => item.class_id === 27);
   const partnerSpecialists = [...gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 4 && item.equipment_slot === 12).reduce((map, item) => {
     const normalized = (item.name || "").replace(/\s*\(Limité\)$/i, "").trim();
     if (!map.has(normalized) || /\(Limité\)$/i.test(map.get(normalized).name || "")) map.set(normalized, { ...item, name: normalized });
@@ -292,14 +325,27 @@ export default function DamageCalculator() {
   }, new Map()).values()];
   const pets = gameData.monsters.filter((item) => item.is_partner || Object.values(item.pet_info || {}).some((value) => Number(value) !== 0));
   const partnerDetails = (item, rank = "S") => {
+    const aura = gameData.buffs.find((buff) => buff.name === `Aura de ${item.name} (${rank})`) || gameData.buffs.find((buff) => buff.name === `Bénédiction de ${item.name} (${rank})`);
+    if (aura) {
+      const descriptions = (aura.effects || []).map((effect) => {
+        const value = Number(effect.EffectVal1 || 0) / 4;
+        if (effect.BCardType === 87) return `EXP héroïque +${value}%`;
+        if (effect.BCardType === 44) return `Toutes les attaques +${value}%`;
+        if (effect.BCardType === 129) return `Attaque en raid +${value}% si les deux Nézarun sont présents`;
+        return `Effet ${effect.BCardType}.${effect.BCardSubType} · ${effect.EffectVal1}`;
+      });
+      return <span><span className="block text-[#d8c3e8]">{aura.name}</span>{descriptions.map((description) => <span key={description} className="mt-0.5 block text-[10px] text-emerald-300">✓ {description}</span>)}</span>;
+    }
     const skills = partnerData[item.vnum]?.ranks?.[rank];
     if (!skills) return `Rang ${rank} · chargement des compétences…`;
     const effects = skills.flatMap((skill) => skill.effects || []);
     return <span><span className="block text-[#d8c3e8]">Rang {rank} · {skills.map((skill) => skill.name.replace(/\s\+\d+$/, "")).join(" · ")}</span>{effects.slice(0, 5).map((effect) => <span key={effect} className="mt-0.5 block text-[10px] text-emerald-300">✓ {effect}</span>)}</span>;
   };
-  const petDetails = (item, rank = "S") => {
+  const petDetails = (item) => {
+    const blessing = gameData.buffs.find((buff) => buff.name === `Bénédiction de ${item.name}`) || gameData.buffs.find((buff) => buff.name?.includes(item.name) && /bénédiction|aura/i.test(buff.name));
+    if (blessing) return <span><span className="block text-[#d8c3e8]">Buff · {blessing.name}</span><span className="mt-0.5 block text-[10px] text-emerald-300">✓ Pris en compte dans les effets du familier</span></span>;
     const names = (item.monster_cards || []).map((effect) => gameData.effects.find((entry) => entry.vnum === effect.BCardVNUM)?.name).filter(Boolean);
-    return names.length ? `Rang ${rank} · ${[...new Set(names)].slice(0, 3).join(" · ")}` : `Rang ${rank} · buff passif du familier`;
+    return names.length ? `Buff · ${[...new Set(names)].slice(0, 3).join(" · ")}` : "Buff passif du familier";
   };
   useEffect(() => {
     partnerIds.forEach((id) => {
@@ -325,10 +371,19 @@ export default function DamageCalculator() {
     const searchableEffect = `${item.name || ""} ${item.effect_summary || ""}`;
     return bookCategory === "utilitaire" ? !Object.entries(bookMatchers).slice(0, 4).some(([, regex]) => regex.test(searchableEffect)) : bookMatchers[bookCategory].test(searchableEffect);
   });
+  const equipmentItems = gameData.items.map((item) => {
+    const labels = (item.buffs || []).map((effect) => gameData.effects.find((entry) => entry.vnum === effect.BCardVNUM)?.name).filter(Boolean);
+    return { ...item, effect_summary: [...new Set(labels)].slice(0, 3).join(" · ") };
+  });
+  const bySlot = (slot) => equipmentItems.filter((item) => item.equipment_slot === slot);
+  const jewellery = { necklace: bySlot(6), ring: bySlot(7), bracelet: bySlot(8) };
+  const resistances = { gloves: bySlot(2), boots: bySlot(3) };
+  const cosmetics = { costume: bySlot(13), costumeHat: bySlot(14), weaponSkin: bySlot(15), wings: bySlot(16), miniPet: bySlot(17), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
   useEffect(() => {
     if (!profile || !gameData.items.length) return;
     setMainWeaponVnum(String(profile.weapon.vnum || ""));
     setSecondaryWeaponVnum(String(profile.secondaryWeapon?.vnum || ""));
+    if (profile.equipmentSelections) setEquipment((old) => ({ ...old, ...profile.equipmentSelections }));
   }, [profile, gameData.items.length]);
   const synchronizeNosWiki = async () => {
     setSyncState({ loading: true, counts: null, error: false });
@@ -369,7 +424,7 @@ export default function DamageCalculator() {
             {profile && <div className="mt-1 text-sm text-[#cbb8dc]">{profile.weapon.name} +{profile.weapon.upgrade} · {profile.weapon.rarity}</div>}
           </div>
           <span className="rounded-xl border border-[#4c3561] bg-[#140b20] px-4 py-2.5 text-sm font-bold text-[#c8b4d8]">{profileStatus === "loaded" ? "✓ Profil privé chargé" : profileStatus === "loading" ? "Chargement…" : "Profil privé indisponible"}</span>
-          {profile && <button type="button" onClick={() => { setProfileDraft(JSON.stringify(profile)); setEditingProfile(true); }} className="rounded-xl border border-[#5b3d72] bg-[#241331] px-3 py-2 text-xs font-bold text-[#cdb6dd]">Modifier le profil privé</button>}
+          {profile && <div className="flex gap-2"><button type="button" onClick={saveCurrentConfiguration} className="rounded-xl bg-[#6f3d98] px-3 py-2 text-xs font-black text-white">{saveStatus === "saving" ? "Sauvegarde…" : saveStatus === "saved" ? "✓ Configuration sauvegardée" : "Sauvegarder ma configuration"}</button><button type="button" onClick={() => { setProfileDraft(JSON.stringify(profile)); setEditingProfile(true); }} className="rounded-xl border border-[#5b3d72] bg-[#241331] px-3 py-2 text-xs font-bold text-[#cdb6dd]">JSON avancé</button></div>}
         </div>
         {profile && <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-bold uppercase text-[#a991bd]">Spécialiste<select value={specialistId} onChange={selectSpecialist} className={fieldClass}>{profile.specialists.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} +{sp.upgrade} · perf. {sp.perfection}</option>)}<option value="custom">✦ SP personnalisée</option></select></label>
@@ -401,6 +456,7 @@ export default function DamageCalculator() {
         {profile && runeDraft && <div className="mt-4">
           <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Rune et options d’équipement — modifiables</div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Field label="Amélioration de l’arme" value={stats.weaponUpgrade} onChange={number(setStats, "weaponUpgrade")} max={13} suffix={`+${result.upgradePercent}%`} />
             <Field label="Attaque augmentée" value={runeDraft.flatAttack || 0} onChange={updateRuneDraft("flatAttack")} />
             <Field label="Dégâts augmentés" value={runeDraft.attackPercent || 0} onChange={updateRuneDraft("attackPercent")} suffix="%" />
             <Field label="Dégâts critiques" value={runeDraft.criticalDamage || 0} onChange={updateRuneDraft("criticalDamage")} suffix="%" />
@@ -454,9 +510,9 @@ export default function DamageCalculator() {
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2">{selectedSecondaryWeapon?.icon_url && <img src={selectedSecondaryWeapon.icon_url} alt="" className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}<select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select></div></label>
             </div>}
             <div className="mt-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3">
-              <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Ensemble de bijoux héroïques</div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">{[["necklace", "Collier héroïque 94"], ["ring", "Anneau héroïque 96"], ["bracelet", "Bracelet héroïque 98"]].map(([key, label]) => <label key={key} className={`flex cursor-pointer items-center gap-2 rounded-lg border p-2 text-xs font-bold ${heroicJewels[key] ? "border-[#a46bd0] bg-[#43255d]" : "border-[#38244b] bg-[#190d27] text-[#a991bd]"}`}><input type="checkbox" checked={heroicJewels[key]} onChange={(event) => setHeroicJewels((old) => ({ ...old, [key]: event.target.checked }))} />{label}</label>)}</div>
-              <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-bold ${heroicSetActive ? "bg-emerald-950/40 text-emerald-300" : "bg-[#1b1027] text-[#806d90]"}`}>{heroicSetActive ? "✓ Bonus d’ensemble actif : toutes les attaques +3 %" : "Équipe les trois bijoux pour activer le bonus caché de +3 % d’attaque."}</div>
+              <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Bijoux</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3"><EquipmentPicker label="Collier" items={jewellery.necklace} value={equipment.necklace} onChange={(value) => setEquipment((old) => ({ ...old, necklace: value }))} /><EquipmentPicker label="Anneau" items={jewellery.ring} value={equipment.ring} onChange={(value) => setEquipment((old) => ({ ...old, ring: value }))} /><EquipmentPicker label="Bracelet" items={jewellery.bracelet} value={equipment.bracelet} onChange={(value) => setEquipment((old) => ({ ...old, bracelet: value }))} /></div>
+              <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-bold ${heroicSetActive ? "bg-emerald-950/40 text-emerald-300" : "bg-[#1b1027] text-[#806d90]"}`}>{heroicSetActive ? "✓ Faveur des dimensions active · toutes les attaques +3 %" : "Le bonus Faveur des dimensions s’activera automatiquement avec les bijoux héroïques 94, 96 et 98."}</div>
             </div>
             {profile && <p className="mt-3 rounded-xl border border-[#4a335f] bg-[#12091d] p-3 text-xs text-[#b9a4ca]">Valeurs privées DrokenA chargées automatiquement. Elles restent modifiables pour simuler un autre équipement.</p>}
           </Section>
@@ -470,11 +526,19 @@ export default function DamageCalculator() {
           </Section>
           <Section icon="✨" title="Élément">
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Élément d’attaque<select value={stats.attackElement} onChange={(event) => setStats((old) => ({ ...old, attackElement: event.target.value }))} className={fieldClass}>{Object.entries(ELEMENTS).map(([key, item]) => <option key={key} value={key}>{item.icon} {item.label}</option>)}</select></label>
-            <div className="grid gap-3 sm:grid-cols-2"><Field label="Élément de la fée" value={stats.fairyElement} onChange={number(setStats, "fairyElement")} suffix="%" max={200} /><Field label="Bonus élémentaire" value={stats.elementPower} onChange={number(setStats, "elementPower")} suffix="%" /></div>
+            <Field label="Élément de la fée" value={stats.fairyElement} onChange={number(setStats, "fairyElement")} suffix="%" max={200} />
+            <p className="mt-2 rounded-lg bg-[#12091d] px-3 py-2 text-[11px] text-[#9f89b1]">Les relations élémentaires sont automatiques : Lumière ↔ Ténèbres et Feu ↔ Eau appliquent le coefficient opposé de 200 %. Les points élémentaires de la SP et de la rune restent intégrés sans champ artificiel supplémentaire.</p>
           </Section>
         </div>
 
         <div className="space-y-5">
+          <Section icon="🧤" title="Résistances et équipement défensif">
+            <p className="mb-3 text-xs text-[#9f89b1]">Les options des gants et bottes sont affichées avec leur effet : résistances, réduction de résistance adverse, attaque ou défense supplémentaire.</p>
+            <div className="grid gap-3 sm:grid-cols-2"><EquipmentPicker label="Gants" items={resistances.gloves} value={equipment.gloves} onChange={(value) => setEquipment((old) => ({ ...old, gloves: value }))} /><EquipmentPicker label="Bottes" items={resistances.boots} value={equipment.boots} onChange={(value) => setEquipment((old) => ({ ...old, boots: value }))} /></div>
+          </Section>
+          <Section icon="👗" title="Costumes et apparences">
+            <div className="grid gap-3 sm:grid-cols-2"><EquipmentPicker label="Costume" items={cosmetics.costume} value={equipment.costume} onChange={(value) => setEquipment((old) => ({ ...old, costume: value }))} /><EquipmentPicker label="Chapeau de costume" items={cosmetics.costumeHat} value={equipment.costumeHat} onChange={(value) => setEquipment((old) => ({ ...old, costumeHat: value }))} /><EquipmentPicker label="Apparence d’arme" items={cosmetics.weaponSkin} value={equipment.weaponSkin} onChange={(value) => setEquipment((old) => ({ ...old, weaponSkin: value }))} /><EquipmentPicker label="Ailes de costume" items={cosmetics.wings} value={equipment.wings} onChange={(value) => setEquipment((old) => ({ ...old, wings: value }))} /><EquipmentPicker label="Mini-familier" items={cosmetics.miniPet} value={equipment.miniPet} onChange={(value) => setEquipment((old) => ({ ...old, miniPet: value }))} /><EquipmentPicker label="Titre" items={cosmetics.title} value={equipment.title} onChange={(value) => setEquipment((old) => ({ ...old, title: value }))} /></div>
+          </Section>
           <Section icon="👹" title="Monstre">
             <label className="mb-3 block text-xs font-bold uppercase text-[#a991bd]">Choisir une cible<select value={monsterId} onChange={selectMonster} className={fieldClass}>{MONSTERS.map((monster) => <option key={monster.id} value={monster.id}>{monster.icon} {monster.name}</option>)}{gameData.monsters.map((monster) => <option key={monster.vnum} value={monster.vnum}>{monster.name} · niv. {monster.level}{monster.hero_level ? `+${monster.hero_level}` : ""}</option>)}</select></label>
             {gameData.monsters.find((monster) => String(monster.vnum) === monsterId)?.icon_url && <img src={gameData.monsters.find((monster) => String(monster.vnum) === monsterId).icon_url} alt="" className="mb-3 h-16 w-16 rounded-xl border border-[#3b2852] bg-[#0d0615] object-contain p-1" />}
@@ -510,10 +574,11 @@ export default function DamageCalculator() {
           </Section>
           <Section icon="🧑‍🤝‍🧑" title="Partenaire">
             <p className="mb-3 text-xs text-[#9f89b1]">Cartes de spécialiste partenaire officielles. Les variantes limitées identiques sont regroupées.</p>
-            <MultiDataPicker label="Spécialistes et bénédictions" items={partnerSpecialists} values={partnerIds} onChange={setPartnerIds} placeholder="Ægir, Yuna, Nézarun bienveillant…" levels={partnerRanks} onLevelChange={(id, value) => setPartnerRanks((old) => ({ ...old, [id]: value }))} levelOptions={["F", "E", "D", "C", "B", "A", "S"]} getDetails={partnerDetails} />
+            <MultiDataPicker label="Spécialistes et bénédictions" items={partnerSpecialists} values={partnerIds} onChange={(values) => { const added = values.find((id) => !partnerIds.includes(id)); if (added) setPartnerRanks((old) => ({ ...old, [added]: "S" })); setPartnerIds(values); }} placeholder="Ægir, Yuna, Nézarun bienveillant…" levels={partnerRanks} onLevelChange={(id, value) => setPartnerRanks((old) => ({ ...old, [id]: value }))} levelOptions={["F", "E", "D", "C", "B", "A", "S"]} getDetails={partnerDetails} />
           </Section>
           <Section icon="🐾" title="Familier">
-            <MultiDataPicker label="Familiers disponibles" items={pets} values={petIds} onChange={setPetIds} placeholder="Rechercher un familier…" levels={petRanks} onLevelChange={(id, value) => setPetRanks((old) => ({ ...old, [id]: value }))} levelOptions={["F", "E", "D", "C", "B", "A", "S"]} getDetails={petDetails} />
+            <p className="mb-3 text-xs text-[#9f89b1]">Les familiers n’ont pas de rang de compétence. Leur bénédiction propre est affichée et reliée automatiquement.</p>
+            <MultiDataPicker label="Familiers disponibles" items={pets} values={petIds} onChange={setPetIds} placeholder="Rechercher un familier…" getDetails={petDetails} />
           </Section>
           <Section icon="📚" title="Passifs personnage">
             <p className="mb-3 text-xs leading-relaxed text-[#9f89b1]">Livres, entraînements et passifs permanents de ton personnage.</p>
