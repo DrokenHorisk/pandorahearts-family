@@ -212,11 +212,16 @@ async def ocr_character_sheet(file: UploadFile = File(...)):
             crop = crop.resize((crop.width * 4, crop.height * 4), Image.Resampling.LANCZOS)
             crop_output = io.BytesIO()
             crop.save(crop_output, format="PNG")
-            crop_result = subprocess.run(
-                ["tesseract", "stdin", "stdout", "-l", "fra", "--psm", "6"],
-                input=crop_output.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False,
-            )
-            regions["accessories"][slot] = crop_result.stdout.decode("utf-8", errors="replace")
+            readings = []
+            for psm in ("11", "6"):
+                crop_result = subprocess.run(
+                    ["tesseract", "stdin", "stdout", "-l", "fra", "--psm", psm],
+                    input=crop_output.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False,
+                )
+                reading = crop_result.stdout.decode("utf-8", errors="replace").strip()
+                if reading and reading not in readings:
+                    readings.append(reading)
+            regions["accessories"][slot] = "\n".join(readings)
     except Exception:
         header_numbers = []
         identity_texts = []
