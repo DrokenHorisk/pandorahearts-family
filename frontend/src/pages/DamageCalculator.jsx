@@ -668,7 +668,8 @@ export default function DamageCalculator() {
       }
       setOcrState({ status: "done", progress: 100, message: `${matches.length} éléments reconnus et appliqués. Vérifie les sélections avant de sauvegarder.`, matches: [...new Set(matches)].slice(0, 16) });
     } catch (error) {
-      setOcrState({ status: "error", progress: 0, message: "La lecture a échoué. Utilise une fiche complète, non redimensionnée et bien nette.", matches: [] });
+      console.error("OCR character sheet failed", error);
+      setOcrState({ status: "error", progress: 0, message: `La lecture a échoué : ${error?.message || "erreur inconnue"}`, matches: [] });
     } finally {
       event.target.value = "";
     }
