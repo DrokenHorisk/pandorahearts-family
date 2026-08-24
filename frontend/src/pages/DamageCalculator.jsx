@@ -57,6 +57,7 @@ export default function DamageCalculator() {
   const [gameData, setGameData] = useState({ monsters: [], skills: [], items: [] });
   const [mainWeaponVnum, setMainWeaponVnum] = useState("");
   const [secondaryWeaponVnum, setSecondaryWeaponVnum] = useState("");
+  const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
   const result = useMemo(() => calculateDamage(stats), [stats]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
@@ -205,6 +206,23 @@ export default function DamageCalculator() {
   }[className];
   const selectedMainWeapon = mainWeapons.find((item) => String(item.vnum) === mainWeaponVnum);
   const selectedSecondaryWeapon = secondaryWeapons.find((item) => String(item.vnum) === secondaryWeaponVnum);
+  const synchronizeNosWiki = async () => {
+    setSyncState({ loading: true, counts: null, error: false });
+    try {
+      const response = await fetch(`${API_BASE}/game-data/sync`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!response.ok) throw new Error("sync");
+      const data = await response.json();
+      setSyncState({ loading: false, counts: data.counts, error: false });
+      const [monsters, skills, items] = await Promise.all([
+        fetch(`${API_BASE}/game-data/monsters?limit=3000`).then((item) => item.json()),
+        fetch(`${API_BASE}/game-data/skills?limit=2500`).then((item) => item.json()),
+        fetch(`${API_BASE}/game-data/items?limit=8000`).then((item) => item.json()),
+      ]);
+      setGameData({ monsters, skills, items });
+    } catch {
+      setSyncState({ loading: false, counts: null, error: true });
+    }
+  };
 
   return <main className="min-h-screen bg-[#0f0718] px-4 py-8 text-[#f3eaff]">
     <div className="mx-auto max-w-7xl">
@@ -275,6 +293,12 @@ export default function DamageCalculator() {
           <div className="mt-2 flex gap-2"><button data-testid="save-private-profile" type="button" onClick={savePrivateProfile} disabled={!profileDraft.trim() || profileStatus === "saving"} className="rounded-lg bg-[#6f3d98] px-4 py-2 text-sm font-black text-white disabled:opacity-40">Enregistrer dans ma base privée</button>{editingProfile && <button type="button" onClick={() => { setEditingProfile(false); setProfileDraft(""); }} className="rounded-lg border border-[#4b3460] px-4 py-2 text-sm text-[#b9a4ca]">Annuler</button>}</div>
         </div>}
       </section>}
+
+      {isDroken && <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-[#39254d] bg-[#160b22] p-3">
+        <button data-testid="sync-noswiki" type="button" onClick={synchronizeNosWiki} disabled={syncState.loading} className="rounded-lg bg-[#573279] px-4 py-2 text-sm font-black text-white disabled:opacity-50">{syncState.loading ? "Synchronisation NosWiki…" : "Synchroniser la base NosWiki"}</button>
+        {syncState.counts && <span className="text-xs text-[#bfa9cf]">✓ {Object.entries(syncState.counts).map(([kind, count]) => `${kind}: ${count.toLocaleString("fr-FR")}`).join(" · ")}</span>}
+        {syncState.error && <span className="text-xs text-rose-300">La synchronisation a pris trop de temps ou a échoué ; consulte le statut avant de relancer.</span>}
+      </div>}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <ResultCard label="Dégâts normaux" accent="text-[#c295e6]" value={`${result.normalMin.toLocaleString("fr-FR")} ~ ${result.normalMax.toLocaleString("fr-FR")}`} />
