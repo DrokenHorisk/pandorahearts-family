@@ -645,6 +645,7 @@ export default function DamageCalculator() {
       const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
       if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
       const equipmentRegions = Object.fromEntries(Object.entries(ocrResult.regions?.equipment || {}).map(([slot, text]) => [slot, normalizeText(text)]));
+      const accessoryRegions = Object.fromEntries(Object.entries(ocrResult.regions?.accessories || {}).map(([slot, text]) => [slot, normalizeText(text)]));
       const itemMatches = gameData.items.filter((item) => item.name && fuzzyIncludes(equipmentSource, item.name)).sort((a, b) => b.name.length - a.name.length);
       const regionalItem = (slot, equipmentSlot) => gameData.items.filter((item) => item.name && item.equipment_slot === equipmentSlot && item.class_id === detectedMask && (equipmentSlot === 1 ? Number(item.item_type) === 1 : Number(item.item_type) === 0) && fuzzyIncludes(equipmentRegions[slot] || "", item.name)).sort((a, b) => b.name.length - a.name.length)[0];
       const main = regionalItem("main", 0) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
@@ -686,6 +687,11 @@ export default function DamageCalculator() {
       const selections = {};
       itemMatches.filter((item) => [1, 2, 3, 4, 6, 7, 8, 9].includes(item.equipment_slot)).forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
       if (armor) { selections.armor = String(armor.vnum); matches.push(`Armure : ${armor.name}`); }
+      const accessorySlots = { necklace: 6, ring: 7, bracelet: 8, gloves: 3, boots: 4, mask: 9, hat: 2 };
+      Object.entries(accessorySlots).forEach(([slot, equipmentSlot]) => {
+        const item = gameData.items.filter((entry) => entry.name && entry.equipment_slot === equipmentSlot && fuzzyIncludes(accessoryRegions[slot] || "", entry.name)).sort((left, right) => right.name.length - left.name.length)[0];
+        if (item) { selections[slot] = String(item.vnum); matches.push(`${slot} : ${item.name}`); }
+      });
       const costumeMatches = gameData.items.filter((item) => [13, 14, 15, 16, 17].includes(item.equipment_slot) && item.name && fuzzyIncludes(costumeSource, item.name)).sort((a, b) => b.name.length - a.name.length);
       costumeMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(item.name); } });
       if (isDrokenSheet) {
