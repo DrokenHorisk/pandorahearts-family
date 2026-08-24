@@ -1,6 +1,8 @@
 import html
+import json
 import re
 from functools import lru_cache
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +18,9 @@ from .noswiki import BASE_URL, SOURCES, sync_all
 router = APIRouter(prefix="/game-data", tags=["game-data"])
 
 PARTNER_RANKS = ("F", "E", "D", "C", "B", "A", "S")
+PARTNER_DATA_PATH = Path(__file__).with_name("data") / "partner_specialists.json"
+with PARTNER_DATA_PATH.open(encoding="utf-8") as partner_data_file:
+    PARTNER_SPECIALISTS = json.load(partner_data_file)
 
 
 def _plain_text(value: str):
@@ -114,6 +119,9 @@ def synchronize(
 
 @router.get("/partner-specialists/{vnum}")
 def partner_specialist(vnum: int):
+    bundled = PARTNER_SPECIALISTS.get(str(vnum))
+    if bundled:
+        return bundled
     try:
         return _partner_specialist(vnum)
     except Exception as exc:
