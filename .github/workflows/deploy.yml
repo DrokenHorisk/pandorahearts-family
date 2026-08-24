@@ -99,6 +99,9 @@ jobs:
       - name: Build and restart services
         run: |
           set -euo pipefail
+          docker_config="$(mktemp -d)"
+          trap 'rm -rf "$docker_config"' EXIT
+          export DOCKER_CONFIG="$docker_config"
           docker compose up -d --build
 
       - name: Verify production
