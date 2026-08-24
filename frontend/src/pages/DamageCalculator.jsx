@@ -49,6 +49,7 @@ export default function DamageCalculator() {
   const [className, setClassName] = useState("archer");
   const [profile, setProfile] = useState(null);
   const [profileStatus, setProfileStatus] = useState(isDroken ? "loading" : "idle");
+  const [profileDraft, setProfileDraft] = useState("");
   const result = useMemo(() => calculateDamage(stats), [stats]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
@@ -91,6 +92,24 @@ export default function DamageCalculator() {
 
   const selectSpecialist = (event) => applyProfile(profile, event.target.value);
   const selectFairy = (event) => applyProfile(profile, specialistId, event.target.value);
+  const savePrivateProfile = async () => {
+    try {
+      const parsed = JSON.parse(profileDraft);
+      setProfileStatus("saving");
+      const response = await fetch(`${API_BASE}/calculator/profile`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: parsed }),
+      });
+      if (!response.ok) throw new Error("save");
+      setProfile(parsed);
+      applyProfile(parsed, parsed.specialists[0]?.id);
+      setProfileDraft("");
+      setProfileStatus("loaded");
+    } catch {
+      setProfileStatus("error");
+    }
+  };
   const selectMonster = (event) => {
     const id = event.target.value;
     const monster = MONSTERS.find((item) => item.id === id);
@@ -129,6 +148,12 @@ export default function DamageCalculator() {
           <label className="text-xs font-bold uppercase text-[#a991bd]">Fée<select value={fairyId} onChange={selectFairy} className={fieldClass}>{profile.fairies.map((fairy) => <option key={fairy.id} value={fairy.id}>{fairy.name} · {fairy.percent}%</option>)}</select></label>
         </div>}
         {profile && specialistId && (() => { const sp = profile.specialists.find((item) => item.id === specialistId); return sp && <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-6">{[["Attaque", sp.attack], ["Défense", sp.defence], ["Élément", sp.element], ["HP/MP", sp.hpMp], ["PVE", sp.pvePerfection], ["Perfection", sp.perfection]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#3b2852] bg-[#12091d] p-3 text-center"><div className="text-[10px] font-bold uppercase text-[#9f89b1]">{label}</div><div className="mt-1 text-xl font-black text-[#eadcf5]">{value}</div></div>)}</div>; })()}
+        {profileStatus === "missing" && <div className="mt-4 rounded-xl border border-[#4b3460] bg-[#12091d] p-4">
+          <label className="block text-xs font-bold uppercase text-[#a991bd]">Initialisation privée du profil
+            <textarea data-testid="private-profile-json" value={profileDraft} onChange={(event) => setProfileDraft(event.target.value)} className="mt-2 h-24 w-full rounded-lg border border-[#3b2852] bg-[#0d0615] p-3 font-mono text-xs text-[#d9c7e7] outline-none focus:border-[#9b6bcc]" placeholder="Données JSON du profil" />
+          </label>
+          <button data-testid="save-private-profile" type="button" onClick={savePrivateProfile} disabled={!profileDraft.trim() || profileStatus === "saving"} className="mt-2 rounded-lg bg-[#6f3d98] px-4 py-2 text-sm font-black text-white disabled:opacity-40">Enregistrer dans ma base privée</button>
+        </div>}
       </section>}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
