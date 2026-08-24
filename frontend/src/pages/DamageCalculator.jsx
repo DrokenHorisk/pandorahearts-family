@@ -112,6 +112,8 @@ export default function DamageCalculator() {
     const baseName = (partner?.name || "").replace(/\s*\(Limité\)$/i, "").trim();
     return gameData.buffs.find((buff) => buff.name === `Aura de ${baseName} (${rank})`) || gameData.buffs.find((buff) => buff.name === `Bénédiction de ${baseName} (${rank})`);
   }).filter(Boolean);
+  const selectedCombatCards = gameData.buffs.filter((buff) => buffIds.includes(String(buff.vnum)));
+  const combatCardAttackPercent = selectedCombatCards.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const companionAttackPercent = selectedPartnerBuffs.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const result = useMemo(() => calculateDamage({
     ...stats,
@@ -121,9 +123,9 @@ export default function DamageCalculator() {
     criticalDamage: stats.criticalDamage + runic.criticalDamage,
     fairyElement: stats.fairyElement + runic.fairyElement,
     elementPower: stats.elementPower + runic.spElement,
-    attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent,
+    attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + combatCardAttackPercent,
     runicAttack: stats.runicAttack + runic.spAttack,
-  }), [stats, runic, heroicSetActive, dragonTarget, companionAttackPercent]);
+  }), [stats, runic, heroicSetActive, dragonTarget, companionAttackPercent, combatCardAttackPercent]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === nextSpecialist) || loadedProfile.specialists[0];
