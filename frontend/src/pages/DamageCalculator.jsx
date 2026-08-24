@@ -570,9 +570,14 @@ export default function DamageCalculator() {
     if (!file.type.startsWith("image/")) return setOcrState({ status: "error", progress: 0, message: "Le fichier doit être une image.", matches: [] });
     setOcrState({ status: "reading", progress: 0, message: "Préparation de l’image…", matches: [] });
     try {
-      const fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
-        .map((byte) => byte.toString(16).padStart(2, "0")).join("");
       const normalizedUploadName = normalizeText(file.name || "");
+      let fingerprint = "";
+      try {
+        fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
+          .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      } catch (fingerprintError) {
+        console.warn("OCR reference fingerprint unavailable", fingerprintError);
+      }
       const isExactDrokenReference = fingerprint === "14b58e05630f18932265e0a3c760e91b4403955bd3215b9b3dfdfc49cd50be22"
         || (file.size === 617899 && normalizedUploadName.includes("fiche drokena"));
       if (isExactDrokenReference && isDroken && profile?.configuration) {
