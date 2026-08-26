@@ -20,6 +20,13 @@ test("legacy attackPercent feeds the soft Q multiplier", () => {
   assert.equal(result.baseDamageMin, 1218);
 });
 
+test("attack-power proc multiplies the already increased attack force", () => {
+  const base = calculateDamage({ attackMin: 1000, attackMax: 1000, attackPercent: 100, attackElement: "none", monsterElement: "none" });
+  const proc = calculateDamage({ attackMin: 1000, attackMax: 1000, attackPercent: 100, attackPowerProcPercent: 155, attackElement: "none", monsterElement: "none" });
+  assert.equal(base.baseDamageMin, 2030);
+  assert.equal(proc.baseDamageMin, 5176);
+});
+
 test("elemental resistance and light versus dark are applied to E", () => {
   const base = { attackMin: 1000, attackMax: 1000, attackElement: "light", monsterElement: "dark", fairyElement: 80 };
   const result = calculateDamage({ ...base, resistance: 0 });
