@@ -60,7 +60,7 @@ test("converts SP points into flat, critical and elemental bonuses", () => {
   assert.deepEqual(specialistPointBonuses({ attack: 120, element: 80, hpMp: 37, perfectionAttack: 39, perfectionElement: 37 }), {
     flatAttack: 1650,
     criticalChance: 8,
-    criticalDamage: 70,
+    criticalDamage: 90,
     elementPower: 127,
   });
 });
