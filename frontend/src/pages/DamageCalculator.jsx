@@ -194,6 +194,25 @@ export default function DamageCalculator() {
   const [ocrCharacter, setOcrCharacter] = useState(null);
   const [equipmentUpgrades, setEquipmentUpgrades] = useState({ main: 0, secondary: 0, armor: 0 });
   const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
+  const equippedMainWeapon = gameData.items.find((item) => String(item.vnum) === String(mainWeaponVnum));
+  const equippedSecondaryWeapon = gameData.items.find((item) => String(item.vnum) === String(secondaryWeaponVnum));
+  const equippedItems = [equippedMainWeapon, equippedSecondaryWeapon, ...Object.values(selectedEquipment)].filter(Boolean);
+  const equippedEffectRows = equippedItems.flatMap((item) => (item.buffs || []).filter((effect) => Number(effect.BCardVNUM) !== 0).map((effect) => {
+    const type = Number(effect.BCardVNUM); const sub = Number(effect.BCardSub); const first = Number(effect.EffectVal1 || 0); const second = Number(effect.EffectVal2 || 0);
+    if (type === 14 && sub === 0 && first < 0) return { item, effect, bucket: "Résistance", value: Math.abs(first) / 4, text: `Résistances adverses −${Math.abs(first) / 4}`, applied: true };
+    if (type === 44 && sub === 1) return { item, effect, bucket: "Attaque %", value: first / 4, text: `Toutes les attaques +${first / 4} %`, applied: true };
+    if (type === 103 && sub === 0) return { item, effect, bucket: "Attaque %", value: first / 4, text: `Toutes les attaques +${first / 4} %`, applied: true };
+    if (type === 131 && sub === 0) return { item, effect, bucket: "Attaque raid", value: first / 4, text: `Toutes les attaques en raid +${first / 4} %`, applied: monsterId === "1619" };
+    if (type === 7 && sub === 4) return { item, effect, bucket: "Élément", value: first / 4, text: `Chaque élément +${first / 4}`, applied: true };
+    if (type === 8 && sub === 0) return { item, effect, bucket: "Proc attaque", chance: first / 4, value: second / 4, text: `${first / 4} % de chance : force d’attaque +${second / 4} %`, applied: true };
+    if (type === 5 && sub === 0) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Probabilité critique +${Math.abs(first)} %`, applied: true };
+    if (type === 5 && sub === 1) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Dégâts critiques +${Math.abs(first)} %`, applied: true };
+    return { item, effect, bucket: "Autre", value: 0, text: `Effet ${type}.${sub} · valeurs ${first}${second ? ` / ${second}` : ""}`, applied: false };
+  }));
+  const itemResistanceReduction = equippedEffectRows.filter((row) => row.bucket === "Résistance" && row.applied).reduce((total, row) => total + row.value, 0);
+  const itemAllElement = equippedEffectRows.filter((row) => row.bucket === "Élément" && row.applied).reduce((total, row) => total + row.value, 0);
+  const itemAttackProcChance = equippedEffectRows.filter((row) => row.bucket === "Proc attaque" && row.applied).reduce((total, row) => total + row.chance, 0);
+  const itemAttackProcValue = equippedEffectRows.filter((row) => row.bucket === "Proc attaque" && row.applied).reduce((total, row) => total + row.value, 0);
   const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
   const dragonTarget = currentMonster?.name?.toLowerCase().includes("dragon");
@@ -267,13 +286,13 @@ export default function DamageCalculator() {
     criticalReduction: monsterCriticalReduction,
     fairyElement: stats.fairyElement + runic.fairyElement,
     elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower,
-    equipmentElement: Number(stats.equipmentElement || 0) + Number(isDroken ? 341 : runic.allElement || 0),
+    equipmentElement: Number(stats.equipmentElement || 0) + itemAllElement,
     attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack,
     flatDefenceReduction: automaticDefenceReduction,
-    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + Number(isDroken ? 80 : runic.enemyResistanceReduction || 0),
-    attackPowerProcChance: Number(isDroken ? 45 : runic.attackPowerProcChance || 0),
-    attackPowerProcValue: Number(isDroken ? 155 : runic.attackPowerProcValue || 0),
+    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + itemResistanceReduction,
+    attackPowerProcChance: itemAttackProcChance,
+    attackPowerProcValue: itemAttackProcValue,
     physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
     physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
     fairyProcChance: String(equipment.wings) === "4531" ? 20 : 0,
@@ -942,6 +961,21 @@ export default function DamageCalculator() {
               `Livres/passifs : ${passiveEffects.length} effet(s) comptabilisé(s)`,
             ]],
           ].map(([title, lines]) => <div key={title} className="rounded-xl border border-cyan-950 bg-[#0c141c] p-3"><div className="mb-2 text-xs font-black uppercase text-cyan-300">{title}</div><ul className="space-y-1 text-[11px] leading-4 text-[#c6d4de]">{lines.map((line) => <li key={line}>• {line}</li>)}</ul></div>)}
+        </div>
+      </details>
+
+      <details className="mb-6 rounded-2xl border border-orange-900/60 bg-[#24160d] p-4" open>
+        <summary className="cursor-pointer text-sm font-black uppercase tracking-widest text-orange-300">🧾 Audit détaillé de chaque équipement porté</summary>
+        <p className="mt-2 text-xs text-[#c9ad98]">Chaque carte correspond à une ligne présente sur un objet. <strong className="text-emerald-300">Appliqué</strong> signifie que sa valeur entre réellement dans le calcul ; les effets encore non décodés restent affichés avec leur identifiant brut.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {equippedEffectRows.map((row, index) => <div key={`${row.item.vnum}-${row.effect.BCardVNUM}-${row.effect.BCardSub}-${index}`} className={`flex gap-3 rounded-xl border p-3 ${row.applied ? "border-emerald-900/60 bg-emerald-950/20" : "border-orange-950 bg-[#160f0a]"}`}>
+            <GameIcon src={row.item.icon_url} alt={row.item.name} className="h-12 w-12 shrink-0 rounded-lg bg-black/30 object-contain p-1" />
+            <div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-white">{row.item.name}</div><div className="mt-1 text-[11px] font-bold text-orange-200">{row.text}</div><div className="mt-1 flex flex-wrap gap-1"><span className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] uppercase text-[#cdb7a7]">{row.bucket}</span><span className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${row.applied ? "bg-emerald-900/50 text-emerald-300" : "bg-amber-900/40 text-amber-300"}`}>{row.applied ? "✓ Appliqué" : "À décoder"}</span><span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[9px] text-[#8e7c70]">BCard {row.effect.BCardVNUM}.{row.effect.BCardSub}</span></div></div>
+          </div>)}
+          {!equippedEffectRows.length && <div className="text-xs text-[#9c8170]">Aucun effet d’équipement chargé.</div>}
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-4">
+          {[["Réduction résistance", `−${itemResistanceReduction}`], ["Chaque élément", `+${itemAllElement}`], ["Chance proc attaque", `${itemAttackProcChance} %`], ["Force du proc", `+${itemAttackProcValue} %`]].map(([label, value]) => <div key={label} className="rounded-xl border border-orange-900/40 bg-black/20 p-3"><div className="text-[10px] font-bold uppercase text-[#bda18e]">{label}</div><div className="mt-1 text-xl font-black text-orange-300">{value}</div></div>)}
         </div>
       </details>
 
