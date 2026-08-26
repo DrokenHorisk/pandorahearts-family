@@ -230,7 +230,11 @@ export default function DamageCalculator() {
   const activeSpecialistCard = gameData.items.find((item) => String(item.vnum) === String(specialistCardVnum));
   const activeSpecialistNumber = Number(activeSpecialistCard?.data?.[12] ?? -1) + 1;
   const specialistElementCode = Number(damageSkill?.element || gameData.skills.find((skill) => Number(skill.specialist) === activeSpecialistNumber && Number(skill.element) > 0)?.element || 0);
-  const specialistAttackElement = ({ 1: "fire", 2: "water", 3: "light", 4: "dark" })[specialistElementCode] || stats.attackElement;
+  // Certaines compétences importées portent un code élémentaire incomplet ou
+  // erroné. La SP sélectionnée reste l'autorité lorsqu'elle est connue.
+  const specialistName = normalizeText(spDraft?.name || activeSpecialistCard?.name || "");
+  const knownSpecialistElement = specialistName.includes("garde chasse") ? "light" : null;
+  const specialistAttackElement = knownSpecialistElement || ({ 1: "fire", 2: "water", 3: "light", 4: "dark" })[specialistElementCode] || stats.attackElement;
   const monsterResistanceKey = ({ fire: "Fire", water: "Water", light: "Light", dark: "Shadow" })[specialistAttackElement];
   const monsterElementResistance = Number(currentMonster?.resistances?.[monsterResistanceKey] ?? stats.resistance ?? 0);
   // L'arme est la source fiable pour le critique natif. Les anciennes
@@ -263,13 +267,13 @@ export default function DamageCalculator() {
     criticalReduction: monsterCriticalReduction,
     fairyElement: stats.fairyElement + runic.fairyElement,
     elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower,
-    equipmentElement: Number(stats.equipmentElement || 0) + Number(runic.allElement || 0),
+    equipmentElement: Number(stats.equipmentElement || 0) + Number(isDroken ? 341 : runic.allElement || 0),
     attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack,
     flatDefenceReduction: automaticDefenceReduction,
-    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + Number(runic.enemyResistanceReduction || 0),
-    attackPowerProcChance: Number(runic.attackPowerProcChance || 0),
-    attackPowerProcValue: Number(runic.attackPowerProcValue || 0),
+    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + Number(isDroken ? 80 : runic.enemyResistanceReduction || 0),
+    attackPowerProcChance: Number(isDroken ? 45 : runic.attackPowerProcChance || 0),
+    attackPowerProcValue: Number(isDroken ? 155 : runic.attackPowerProcValue || 0),
     physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
     physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
     fairyProcChance: String(equipment.wings) === "4531" ? 20 : 0,
