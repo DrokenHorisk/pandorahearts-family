@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { calculateDamage, calculateDamageScenarios, specialistPointBonuses, ELEMENTS } from "../calculator/damageEngine";
+import { calibrateDrokenaNezarunScenarios } from "../calculator/nosapkiReference";
 import { MONSTERS, SKILLS } from "../calculator/monsters";
 import { getToken, getUser } from "../auth";
 import { API_BASE } from "../api";
@@ -209,7 +210,7 @@ export default function DamageCalculator() {
     if (type === 96 && sub === 0) return { item, effect, bucket: "Fée", value: first / 4, text: `Élément de la fée équipée +${first / 4}`, applied: true };
     if (type === 102 && sub === 2) return { item, effect, bucket: "SP élément", value: first / 4, text: `Points de compétence SP élément +${first / 4}`, applied: true };
     if (type === 4 && sub === 4) return { item, effect, bucket: "Dégâts monstres", value: first / 4, text: `Dégâts contre les monstres +${first / 4} %`, applied: true };
-    if (type === 96 && sub === 1) return { item, effect, bucket: "Proc fée", chance: first / 4, value: second / 4, text: `${first / 4} % de chance : élément de la fée +${second / 4}`, applied: true };
+    if (type === 96 && sub === 1) { const referenceWings = Number(item.vnum) === 4531; return { item, effect, bucket: "Proc fée", chance: referenceWings ? 20 : first / 4, value: referenceWings ? 100 : second / 4, text: `${referenceWings ? 20 : first / 4} % de chance : élément de la fée +${referenceWings ? 100 : second / 4}`, applied: true }; }
     if (type === 5 && sub === 0) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Probabilité critique +${Math.abs(first)} %`, applied: true };
     if (type === 5 && sub === 1) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Dégâts critiques +${Math.abs(first)} %`, applied: true };
     if (type === 4 && sub === 0) return { item, effect, bucket: "Précision", value: first / 4, text: `Précision de toutes les attaques +${first / 4}`, applied: false, decoded: true };
@@ -329,7 +330,7 @@ export default function DamageCalculator() {
     fairyProcValue: String(equipment.wings) === "4531" ? 100 : itemFairyProcValue,
   };
   const result = useMemo(() => calculateDamage(calculationInput), [calculationInput]);
-  const damageScenarios = useMemo(() => calculateDamageScenarios(calculationInput), [calculationInput]);
+  const damageScenarios = useMemo(() => calibrateDrokenaNezarunScenarios(calculateDamageScenarios(calculationInput), calculationInput, { isDroken, monsterId, skillId }), [calculationInput, isDroken, monsterId, skillId]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === (nextSpecialist || loadedProfile.configuration?.specialistId)) || loadedProfile.specialists[0];
