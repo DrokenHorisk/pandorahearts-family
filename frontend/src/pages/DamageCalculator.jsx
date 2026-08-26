@@ -203,7 +203,13 @@ export default function DamageCalculator() {
   const petAttackPercent = selectedPetBlessings.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const passiveEffects = gameData.items.filter((item) => characterPassiveIds.includes(String(item.vnum))).flatMap((item) => [...(item.buffs || []), ...gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum) || skill.name?.trim().toLowerCase() === item.name?.trim().toLowerCase()).flatMap((skill) => skill.buffs || [])]);
   const equipmentEffects = Object.values(selectedEquipment).filter(Boolean).flatMap((item) => item.buffs || []);
-  const automaticAttackPercent = [...passiveEffects, ...equipmentEffects].filter((effect) => Number(effect.BCardVNUM ?? effect.Type) === 44 && Number(effect.BCardSub ?? effect.SubType) === 1).reduce((total, effect) => total + Number(effect.EffectVal1 ?? effect.Value ?? 0) / 4, 0);
+  const automaticAttackPercent = [...passiveEffects, ...equipmentEffects].filter((effect) => {
+    const type = Number(effect.BCardVNUM ?? effect.Type);
+    const subtype = Number(effect.BCardSub ?? effect.SubType);
+    // 44/1 : objets et livres ; 103/0 : toutes attaques ;
+    // 131/0 : toutes attaques en raid (apparences d'arme).
+    return (type === 44 && subtype === 1) || (type === 103 && subtype === 0) || (monsterId === "1619" && type === 131 && subtype === 0);
+  }).reduce((total, effect) => total + Number(effect.EffectVal1 ?? effect.Value ?? 0) / 4, 0);
   const allSelectedBuffEffects = [...selectedPartnerBuffs, ...selectedPetBlessings, ...selectedCombatCards].flatMap((buff) => buff.effects || []);
   const raidMonsterDamage = monsterId === "1619" ? allSelectedBuffEffects.filter((effect) => Number(effect.BCardType ?? effect.BCardVNUM ?? effect.Type) === 129 && Number(effect.BCardSubType ?? effect.BCardSub ?? effect.SubType) === 1).reduce((total, effect) => total + Number(effect.EffectVal1 ?? effect.Value ?? 0) / 4, 0) : 0;
   const selectedDebuffEffects = selectedDebuffCards.flatMap((buff) => buff.effects || []);
@@ -212,13 +218,19 @@ export default function DamageCalculator() {
   const damageSkill = gameData.skills.find((skill) => String(skill.vnum) === skillId);
   const damageWeaponVnum = damageSkill?.secondary_weapon ? secondaryWeaponVnum : mainWeaponVnum;
   const damageWeapon = gameData.items.find((item) => String(item.vnum) === String(damageWeaponVnum));
-  // L’arme sélectionnée est la source fiable du critique natif. Cela évite de
-  // réutiliser un ancien total cumulé enregistré dans les champs manuels.
+  // L'arme est la source fiable pour le critique natif. Les anciennes
+  // configurations pouvaient contenir un total déjà cumulé dans `stats`, ce
+  // qui produisait des valeurs comme 77 % / 136 % après rechargement.
   const weaponCriticalChance = Number(damageWeapon?.data?.[4] ?? stats.criticalChance ?? 0);
   const weaponCriticalDamage = Number(damageWeapon?.data?.[5] ?? stats.criticalDamage ?? 150);
+  const weaponOptionCriticalChance = Number(runeDraft?.criticalChance || runic.criticalChance || 0);
+  const weaponOptionCriticalDamage = Number(runeDraft?.criticalDamage || runic.criticalDamage || 0);
+  const weaponOptionSpAttack = Number(runeDraft?.spAttack || runic.spAttack || 0);
+  const weaponOptionSpElement = Number(runeDraft?.spElement || runic.spElement || 0);
+  const monsterCriticalReduction = (currentMonster?.monster_cards || []).filter((effect) => Number(effect.BCardVNUM) === 5 && Number(effect.BCardSub) === 4).reduce((total, effect) => total + Math.abs(Number(effect.EffectVal1 || 0)) / 4, 0);
   const spBonuses = specialistPointBonuses({
-    attack: Number(spDraft?.attack || 0) + Number(runic.spAttack || 0),
-    element: Number(spDraft?.element || 0) + Number(runic.spElement || 0),
+    attack: Number(spDraft?.attack || 0) + weaponOptionSpAttack,
+    element: Number(spDraft?.element || 0) + weaponOptionSpElement,
     hpMp: Number(spDraft?.hpMp || 0),
     perfectionAttack: Number(spDraft?.perfectionStats?.[0] || 0),
     perfectionElement: Number(spDraft?.perfectionStats?.[2] || 0),
@@ -229,8 +241,9 @@ export default function DamageCalculator() {
     weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
     flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack,
     monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
-    criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + runic.criticalChance + spBonuses.criticalChance,
-    criticalDamage: weaponCriticalDamage + runic.criticalDamage + spBonuses.criticalDamage,
+    criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance,
+    criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage,
+    criticalReduction: monsterCriticalReduction,
     fairyElement: stats.fairyElement + runic.fairyElement,
     elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower,
     attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
