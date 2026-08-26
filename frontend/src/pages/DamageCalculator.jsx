@@ -6,13 +6,14 @@ import { API_BASE } from "../api";
 
 const defaults = {
   level: 99, jobLevel: 80, heroLevel: 99, attackMin: 1000, attackMax: 1200, flatAttack: 0, attackPercent: 0,
+  weaponDamageMin: 0, weaponDamageMax: 0, attackBonus: 0, softDamagePercent: 0,
   monsterDamage: 0, skillPower: 0, criticalChance: 20, criticalDamage: 150,
   attackElement: "light", fairyElement: 80, elementPower: 0, monsterElement: "dark",
-  defence: 500, defenceReduction: 0, resistance: 0, resistanceReduction: 0,
+  defence: 500, baseDefence: 0, defencePercent: 0, defenceReduction: 0, resistance: 0, resistanceReduction: 0,
   weaponUpgrade: 0, buffDamage: 0, debuffDamage: 0, runicAttack: 0,
   monsterDefenceUpgrade: 0, increasedDamageChance: 0, increasedDamagePercent: 0,
   increasedCriticalChance: 0, increasedCriticalPercent: 0,
-  attackType: "ranged",
+  attackType: "ranged", attackerMorale: 0, targetLevel: 0, targetMorale: 0, pveCorrection: 0,
 };
 
 const fieldClass = "mt-1 w-full rounded-xl border border-[#3b2852] bg-[#12091d] px-3 py-2.5 text-[#f3eaff] outline-none transition focus:border-[#9b6bcc]";
@@ -202,8 +203,13 @@ export default function DamageCalculator() {
   const passiveEffects = gameData.items.filter((item) => characterPassiveIds.includes(String(item.vnum))).flatMap((item) => [...(item.buffs || []), ...gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum) || skill.name?.trim().toLowerCase() === item.name?.trim().toLowerCase()).flatMap((skill) => skill.buffs || [])]);
   const equipmentEffects = Object.values(selectedEquipment).filter(Boolean).flatMap((item) => item.buffs || []);
   const automaticAttackPercent = [...passiveEffects, ...equipmentEffects].filter((effect) => Number(effect.BCardVNUM ?? effect.Type) === 44 && Number(effect.BCardSub ?? effect.SubType) === 1).reduce((total, effect) => total + Number(effect.EffectVal1 ?? effect.Value ?? 0) / 4, 0);
+  const damageSkill = gameData.skills.find((skill) => String(skill.vnum) === skillId);
+  const damageWeaponVnum = damageSkill?.secondary_weapon ? secondaryWeaponVnum : mainWeaponVnum;
+  const damageWeapon = gameData.items.find((item) => String(item.vnum) === String(damageWeaponVnum));
   const result = useMemo(() => calculateDamage({
     ...stats,
+    weaponDamageMin: Number(stats.weaponDamageMin || damageWeapon?.data?.[1] || 0),
+    weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
     flatAttack: stats.flatAttack + runic.flatAttack + Number(spDraft?.attack || 0) + Number(spDraft?.perfectionStats?.[0] || 0),
     monsterDamage: stats.monsterDamage + runic.monsterDamage + (dragonTarget ? runic.dragonDamage : 0),
     criticalChance: stats.criticalChance + runic.criticalChance,
@@ -212,7 +218,7 @@ export default function DamageCalculator() {
     elementPower: stats.elementPower + runic.spElement + Number(spDraft?.perfectionStats?.[2] || 0),
     attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack + runic.spAttack,
-  }), [stats, runic, spDraft, heroicSetActive, dragonTarget, companionAttackPercent, petAttackPercent, combatCardAttackPercent, automaticAttackPercent]);
+  }), [stats, runic, spDraft, heroicSetActive, dragonTarget, companionAttackPercent, petAttackPercent, combatCardAttackPercent, automaticAttackPercent, damageWeapon]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === (nextSpecialist || loadedProfile.configuration?.specialistId)) || loadedProfile.specialists[0];
@@ -299,6 +305,7 @@ export default function DamageCalculator() {
       defence: nezarun.defence?.[defenceKey] || 0,
       resistance: nezarun.resistances?.[elementKey] || 0,
       monsterDefenceUpgrade: nezarun.defence_upgrade || 0,
+      targetLevel: Number(nezarun.level || 0) + Number(nezarun.hero_level || 0),
     }));
   }, [gameData.monsters.length, stats.attackType]);
 
@@ -410,6 +417,7 @@ export default function DamageCalculator() {
         defence: monster.defence?.[defenceKey] ?? monster.defence ?? 0,
         monsterDefenceUpgrade: monster.defence_upgrade || 0,
         resistance: monster.resistances?.[elementKey] ?? monster.resistance ?? 0,
+        targetLevel: Number(monster.level || 0) + Number(monster.hero_level || 0),
       }));
     }
   };
@@ -845,12 +853,14 @@ export default function DamageCalculator() {
           <Section icon="🏹" title="Personnage">
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{["aventurier", "escrimeur", "archer", "mage"].map((name) => <button type="button" key={name} onClick={() => { setClassName(name); setSpecialistCardVnum(""); setSkillId("basic"); }} className={`rounded-xl border p-2 capitalize transition ${className === name ? "border-[#a66ed1] bg-[#4a2868] text-white" : "border-[#3b2852] bg-[#12091d] text-[#aa95ba] hover:border-[#745090]"}`}><img src={`${import.meta.env.BASE_URL}classes/${name}.png`} alt="" className="mx-auto mb-1 h-9 w-9 object-contain" />{name}</button>)}</div>
             {ocrCharacter && <div className="mb-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-300">✓ {ocrCharacter.nickname} · {ocrCharacter.className} · niveau {ocrCharacter.level} · métier {ocrCharacter.jobLevel} · héros {ocrCharacter.heroLevel}</div>}
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Niveau métier" value={stats.jobLevel} onChange={number(setStats, "jobLevel")} max={100} /><Field label="Niveau héroïque" value={stats.heroLevel} onChange={number(setStats, "heroLevel")} max={99} /><Field label="Attaque min." value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque max." value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Niveau métier" value={stats.jobLevel} onChange={number(setStats, "jobLevel")} max={100} /><Field label="Niveau héroïque" value={stats.heroLevel} onChange={number(setStats, "heroLevel")} max={99} /><Field label="Attaque de base min. (A)" value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque de base max. (A)" value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
             {gameData.items.length > 0 && <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[0]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedMainWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={mainWeaponVnum} onChange={(event) => setMainWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{mainWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select><input aria-label="Amélioration arme principale" title="Amélioration de l’arme principale" type="number" min="0" max="13" value={equipmentUpgrades.main} onChange={(event) => { const upgrade = Math.max(0, Math.min(13, Number(event.target.value))); setEquipmentUpgrades((old) => ({ ...old, main: upgrade })); if (!selectedSkill?.secondary_weapon) setStats((old) => ({ ...old, weaponUpgrade: upgrade })); }} className="mt-1 w-20 rounded-xl border border-[#3b2852] bg-[#12091d] px-2 py-2.5 text-center text-white" /></div><span className="mt-1 block text-[10px] font-normal normal-case text-[#806d90]">Amélioration +{equipmentUpgrades.main}</span></label>
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedSecondaryWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select><input aria-label="Amélioration arme secondaire" title="Amélioration de l’arme secondaire" type="number" min="0" max="13" value={equipmentUpgrades.secondary} onChange={(event) => { const upgrade = Math.max(0, Math.min(13, Number(event.target.value))); setEquipmentUpgrades((old) => ({ ...old, secondary: upgrade })); if (selectedSkill?.secondary_weapon) setStats((old) => ({ ...old, weaponUpgrade: upgrade })); }} className="mt-1 w-20 rounded-xl border border-[#3b2852] bg-[#12091d] px-2 py-2.5 text-center text-white" /></div><span className="mt-1 block text-[10px] font-normal normal-case text-[#806d90]">Amélioration +{equipmentUpgrades.secondary}</span></label>
             </div>}
             {equipmentUpgrades.armor > 0 && <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded-lg bg-[#2a1938] px-2 py-1">Armure +{equipmentUpgrades.armor}</span></div>}
+            {damageWeapon && <div className="mt-3 rounded-xl border border-[#3e2c50] bg-[#12091d] px-3 py-2 text-xs text-[#bda9cc]">Dégâts de l’arme utilisée (W) chargés automatiquement : <strong className="text-emerald-300">{Number(damageWeapon.data?.[1] || 0).toLocaleString("fr-FR")}–{Number(damageWeapon.data?.[2] || 0).toLocaleString("fr-FR")}</strong></div>}
+            <details className="mt-3 rounded-xl border border-[#3e2c50] bg-[#12091d] p-3"><summary className="cursor-pointer text-xs font-black uppercase tracking-widest text-[#b68bd9]">Réglages avancés de la formule PvE</summary><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Moral attaquant" value={stats.attackerMorale} onChange={number(setStats, "attackerMorale")} /><Field label="Moral cible" value={stats.targetMorale} onChange={number(setStats, "targetMorale")} /><Field label="Correction monstre (K)" value={stats.pveCorrection} onChange={number(setStats, "pveCorrection")} /><Field label="Défense de base cible" value={stats.baseDefence} onChange={number(setStats, "baseDefence")} /><Field label="Bonus défense cible" value={stats.defencePercent} onChange={number(setStats, "defencePercent")} suffix="%" /><Field label="Réduction critique cible" value={stats.criticalReduction || 0} onChange={number(setStats, "criticalReduction")} suffix="%" /></div></details>
             <div className="mt-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3">
               <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Bijoux</div>
               <div className="mt-3 grid gap-3 sm:grid-cols-3"><EquipmentPicker label="Collier" items={jewellery.necklace} value={equipment.necklace} onChange={(value) => setEquipment((old) => ({ ...old, necklace: value }))} /><EquipmentPicker label="Anneau" items={jewellery.ring} value={equipment.ring} onChange={(value) => setEquipment((old) => ({ ...old, ring: value }))} /><EquipmentPicker label="Bracelet" items={jewellery.bracelet} value={equipment.bracelet} onChange={(value) => setEquipment((old) => ({ ...old, bracelet: value }))} /></div>
@@ -923,7 +933,7 @@ export default function DamageCalculator() {
             <MultiDataPicker label="Effets débloqués par la famille" items={gameData.buffs} values={familyPassiveIds} onChange={setFamilyPassiveIds} placeholder="Rechercher un effet de famille…" />
           </Section>
           <Section icon="📊" title="Détail du calcul">
-            <dl className="space-y-3 text-sm">{[["Bonus de l’arme", `+${result.upgradeAttack.toLocaleString("fr-FR")} (+${result.weaponUpgrade})`], ["Dégâts physiques", `${result.physicalMin.toLocaleString("fr-FR")} ~ ${result.physicalMax.toLocaleString("fr-FR")}`], ["Défense effective", result.effectiveDefence.toLocaleString("fr-FR")], ["Résistance effective", `${result.effectiveResistance}%`], ["Part élémentaire", `${result.elementalMin.toLocaleString("fr-FR")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#39254d] pb-2"><dt className="text-[#a991bd]">{label}</dt><dd className="font-black">{value}</dd></div>)}</dl>
+            <dl className="space-y-3 text-sm">{[["Base après attaque/arme (B)", `${result.baseDamageMin.toLocaleString("fr-FR")} ~ ${result.baseDamageMax.toLocaleString("fr-FR")}`], ["Bonus de l’arme", `+${result.upgradeAttack.toLocaleString("fr-FR")} (+${result.weaponUpgrade})`], ["Dégâts physiques (N)", `${result.physicalMin.toLocaleString("fr-FR")} ~ ${result.physicalMax.toLocaleString("fr-FR")}`], ["Défense effective (V)", result.effectiveDefence.toLocaleString("fr-FR")], ["Résistance effective", `${result.effectiveResistance}%`], ["Avantage élémentaire (X)", `+${Math.round(result.elementAdvantage * 100)}%`], ["Part élémentaire (E)", `${result.elementalMin.toLocaleString("fr-FR")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`], ["Différence niveau/moral (M)", result.morale.toLocaleString("fr-FR")], ["Bonus finaux (G)", `${result.finalDamagePercent}%`], ["Correction monstre (K)", result.pveCorrection.toLocaleString("fr-FR")]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#39254d] pb-2"><dt className="text-[#a991bd]">{label}</dt><dd className="font-black">{value}</dd></div>)}</dl>
             <p className="mt-4 rounded-xl border border-[#705128] bg-[#2c1d13] p-3 text-xs leading-relaxed text-[#f1ca91]">Le moteur est encore en calibration. La prochaine étape branchera les vraies compétences, monstres, buffs et effets, puis l’import automatique de fiche.</p>
           </Section>
           <Section icon="🖼️" title="Import de fiche">
