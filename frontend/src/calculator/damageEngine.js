@@ -60,7 +60,7 @@ export function calculateDamage(input) {
   const resistanceMultiplier = Math.max(0, 1 - effectiveResistance / 100);
   const elemental = (base) => Math.floor((elementFlat + (base + 100) * fairyFraction) * (1 + advantage) * resistanceMultiplier);
 
-  const attackerLevel = numeric(input.attackerLevel, numeric(input.level));
+  const attackerLevel = input.attackerLevel == null ? numeric(input.level) + numeric(input.heroLevel) : numeric(input.attackerLevel);
   const morale = (attackerLevel + numeric(input.attackerMorale)) - (numeric(input.targetLevel) + numeric(input.targetMorale));
   const finalPercent = (numeric(input.monsterDamage) + numeric(input.buffDamage) + numeric(input.debuffDamage) + numeric(input.finalDamagePercent)) / 100;
   const correction = numeric(input.pveCorrection);
