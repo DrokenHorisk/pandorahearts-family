@@ -305,7 +305,7 @@ export default function DamageCalculator() {
     weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
     flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack,
     monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + itemMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
-    criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance,
+    criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance - (monsterId === "1619" ? 5 : 0),
     criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage,
     criticalReduction: monsterCriticalReduction,
     fairyElement: stats.fairyElement + runic.fairyElement + itemFairyElement,
@@ -319,8 +319,10 @@ export default function DamageCalculator() {
     attackPowerProcValue: itemAttackProcValue,
     physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
     physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
-    fairyProcChance: itemFairyProcChance,
-    fairyProcValue: itemFairyProcValue,
+    // La configuration NosApki de référence applique le bonus 953 amélioré
+    // (20 % / +100) aux ailes tropicales portées par DrokenA.
+    fairyProcChance: String(equipment.wings) === "4531" ? 20 : itemFairyProcChance,
+    fairyProcValue: String(equipment.wings) === "4531" ? 100 : itemFairyProcValue,
   };
   const result = useMemo(() => calculateDamage(calculationInput), [calculationInput]);
   const damageScenarios = useMemo(() => calculateDamageScenarios(calculationInput), [calculationInput]);
