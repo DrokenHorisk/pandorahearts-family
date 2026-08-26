@@ -903,6 +903,48 @@ export default function DamageCalculator() {
         </div>}
       </section>
 
+      <details className="mb-6 rounded-2xl border border-cyan-900/60 bg-[#101b24] p-4" open>
+        <summary className="cursor-pointer text-sm font-black uppercase tracking-widest text-cyan-300">🔎 Tout ce qui entre réellement dans le calcul</summary>
+        <p className="mt-2 text-xs text-[#9fb5c4]">Cette fenêtre affiche les valeurs finales envoyées au moteur, après cumul des armes, runes, SP, fée, équipements, buffs et débuffs.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Attaque et arme", [
+              `A : ${stats.attackMin}–${stats.attackMax}`,
+              `W : ${calculationInput.weaponDamageMin}–${calculationInput.weaponDamageMax} · arme +${calculationInput.weaponUpgrade}`,
+              `Attaque fixe cumulée : +${calculationInput.flatAttack}`,
+              `Puissance du skill : +${calculationInput.skillPower || 0}`,
+              `Toutes attaques : +${calculationInput.attackPercent}%`,
+              `Dégâts monstres/final : +${calculationInput.monsterDamage}%`,
+            ]],
+            ["SP, critique et élément", [
+              `${spDraft?.name || "SP"} : ${spDraft?.attack || 0}/${spDraft?.defence || 0}/${spDraft?.element || 0}/${spDraft?.hpMp || 0}`,
+              `Bonus SP calculés : ATQ +${spBonuses.flatAttack} · élément +${spBonuses.elementPower}`,
+              `Critique : ${calculationInput.criticalChance}% / ${calculationInput.criticalDamage}%`,
+              `Élément : ${ELEMENTS[calculationInput.attackElement]?.label || calculationInput.attackElement}`,
+              `Fée : ${calculationInput.fairyElement}% · élément équipement +${calculationInput.equipmentElement}`,
+              `Avantage : +${Math.round(result.elementAdvantage * 100)}%`,
+            ]],
+            ["Cible et effets orange", [
+              `${currentMonster?.name || "Cible"} : défense ${calculationInput.defence}`,
+              `Résistance brute : ${calculationInput.resistance}%`,
+              `Réduction résistance : −${calculationInput.resistanceReduction}`,
+              `Résistance effective : ${result.effectiveResistance}%`,
+              `Proc attaque : ${calculationInput.attackPowerProcChance}% / +${calculationInput.attackPowerProcValue}%`,
+              `Réduction distance : ${calculationInput.physicalReductionChance}% / −${calculationInput.physicalReductionValue}%`,
+              `Proc fée : ${calculationInput.fairyProcChance}% / +${calculationInput.fairyProcValue}`,
+            ]],
+            ["Sources sélectionnées", [
+              `Arme : ${damageWeapon?.name || "aucune"}`,
+              `Rune : ATQ ${runic.flatAttack || 0} · monstres ${runic.monsterDamage || 0}% · crit ${weaponOptionCriticalChance}/${weaponOptionCriticalDamage}`,
+              `Buffs : ${[...selectedPartnerBuffs, ...selectedPetBlessings, ...selectedCombatCards].map((item) => item.name).join(", ") || "aucun"}`,
+              `Débuffs : ${selectedDebuffCards.map((item) => item.name).join(", ") || "aucun"}`,
+              `Équipement : ${Object.values(selectedEquipment).filter(Boolean).map((item) => item.name).join(", ") || "aucun"}`,
+              `Livres/passifs : ${passiveEffects.length} effet(s) comptabilisé(s)`,
+            ]],
+          ].map(([title, lines]) => <div key={title} className="rounded-xl border border-cyan-950 bg-[#0c141c] p-3"><div className="mb-2 text-xs font-black uppercase text-cyan-300">{title}</div><ul className="space-y-1 text-[11px] leading-4 text-[#c6d4de]">{lines.map((line) => <li key={line}>• {line}</li>)}</ul></div>)}
+        </div>
+      </details>
+
       <section className="mb-6 rounded-2xl border border-[#4a315f] bg-[#180d26] p-4">
         <div className="mb-3 text-xs font-black uppercase tracking-widest text-[#c48ce9]">Résultats selon les effets déclenchés</div>
         <div className="grid gap-1.5">{damageScenarios.map((scenario) => <div key={scenario.id} className="grid gap-2 rounded-lg border border-[#3b3044] bg-[#111111] px-3 py-2 sm:grid-cols-[minmax(180px,1fr)_2fr] sm:items-center"><div className="text-center text-base font-black text-white">{scenario.min.toLocaleString("fr-FR")} ~ {scenario.max.toLocaleString("fr-FR")}</div><div className="text-[11px] leading-4 text-[#f09a37]">{scenario.effects.length ? scenario.effects.map((effect) => <span key={effect} className="block">{effect}</span>) : <span className="text-[#887c8e]">—</span>}</div></div>)}</div>
