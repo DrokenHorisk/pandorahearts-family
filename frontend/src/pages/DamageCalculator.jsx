@@ -212,7 +212,11 @@ export default function DamageCalculator() {
   const damageSkill = gameData.skills.find((skill) => String(skill.vnum) === skillId);
   const damageWeaponVnum = damageSkill?.secondary_weapon ? secondaryWeaponVnum : mainWeaponVnum;
   const damageWeapon = gameData.items.find((item) => String(item.vnum) === String(damageWeaponVnum));
-  // L’arme sélectionnée est la source fiable du critique natif. Cela évite de\n  // réutiliser un ancien total cumulé enregistré dans les champs manuels.\n  const weaponCriticalChance = Number(damageWeapon?.data?.[4] ?? stats.criticalChance ?? 0);\n  const weaponCriticalDamage = Number(damageWeapon?.data?.[5] ?? stats.criticalDamage ?? 150);\n  const spBonuses = specialistPointBonuses({
+  // L’arme sélectionnée est la source fiable du critique natif. Cela évite de
+  // réutiliser un ancien total cumulé enregistré dans les champs manuels.
+  const weaponCriticalChance = Number(damageWeapon?.data?.[4] ?? stats.criticalChance ?? 0);
+  const weaponCriticalDamage = Number(damageWeapon?.data?.[5] ?? stats.criticalDamage ?? 150);
+  const spBonuses = specialistPointBonuses({
     attack: Number(spDraft?.attack || 0) + Number(runic.spAttack || 0),
     element: Number(spDraft?.element || 0) + Number(runic.spElement || 0),
     hpMp: Number(spDraft?.hpMp || 0),
