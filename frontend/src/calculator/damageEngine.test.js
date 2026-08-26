@@ -15,6 +15,11 @@ test("defence reduction is applied before N", () => {
   assert.ok(calculateDamage({ ...base, defenceReduction: 50 }).normalMin > calculateDamage(base).normalMin);
 });
 
+test("legacy attackPercent feeds the soft Q multiplier", () => {
+  const result = calculateDamage({ attackMin: 1000, attackMax: 1000, attackPercent: 20, attackElement: "none", monsterElement: "none" });
+  assert.equal(result.baseDamageMin, 1218);
+});
+
 test("elemental resistance and light versus dark are applied to E", () => {
   const base = { attackMin: 1000, attackMax: 1000, attackElement: "light", monsterElement: "dark", fairyElement: 80 };
   const result = calculateDamage({ ...base, resistance: 0 });
