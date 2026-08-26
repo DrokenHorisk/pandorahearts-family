@@ -1,3 +1,4 @@
+# Deployment trigger: cumulative PvE weapon options
 name: Test, build and deploy frontend
 
 # Production deploys are serialized and always back up PostgreSQL first.
