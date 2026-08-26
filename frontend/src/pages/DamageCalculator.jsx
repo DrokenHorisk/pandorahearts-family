@@ -174,7 +174,16 @@ export default function DamageCalculator() {
   const [familyPassiveIds, setFamilyPassiveIds] = useState([]);
   const [showEffectDetails, setShowEffectDetails] = useState(true);
   const [bookCategory, setBookCategory] = useState("attaque");
-  const [runic, setRunic] = useState({ flatAttack: 0, monsterDamage: 0, criticalChance: 0, criticalDamage: 0, dragonDamage: 0, fairyElement: 0, spAttack: 0, spElement: 0, attackPercent: 0 });
+  const [runic, setRunic] = useState({
+    flatAttack: 0, monsterDamage: 0, criticalChance: 0, criticalDamage: 0, dragonDamage: 0,
+    fairyElement: 0, spAttack: 0, spElement: 0, attackPercent: 0,
+    // Options PvE orange cumulées des deux armes de DrokenA. Elles restent
+    // éditables et sont sauvegardées avec toute la configuration.
+    attackPowerProcChance: isDroken ? 45 : 0,
+    attackPowerProcValue: isDroken ? 155 : 0,
+    enemyResistanceReduction: isDroken ? 80 : 0,
+    allElement: isDroken ? 341 : 0,
+  });
   const [heroicJewels, setHeroicJewels] = useState({ necklace: false, ring: false, bracelet: false });
   const [equipment, setEquipment] = useState({ armor: "", necklace: "", ring: "", bracelet: "", hat: "", mask: "", gloves: "", boots: "", costume: "", costumeHat: "", weaponSkin: "", wings: "", miniPet: "", title: "" });
   const [saveStatus, setSaveStatus] = useState("");
@@ -254,12 +263,13 @@ export default function DamageCalculator() {
     criticalReduction: monsterCriticalReduction,
     fairyElement: stats.fairyElement + runic.fairyElement,
     elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower,
+    equipmentElement: Number(stats.equipmentElement || 0) + Number(runic.allElement || 0),
     attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack,
     flatDefenceReduction: automaticDefenceReduction,
-    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction,
-    attackPowerProcChance: monsterId === "1619" ? 45 : 0,
-    attackPowerProcValue: monsterId === "1619" ? 155 : 0,
+    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + Number(runic.enemyResistanceReduction || 0),
+    attackPowerProcChance: Number(runic.attackPowerProcChance || 0),
+    attackPowerProcValue: Number(runic.attackPowerProcValue || 0),
     physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
     physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
     fairyProcChance: String(equipment.wings) === "4531" ? 20 : 0,
@@ -925,13 +935,19 @@ export default function DamageCalculator() {
             <div className="grid gap-3 sm:grid-cols-2"><Field label="Attaques supplémentaires" value={stats.flatAttack} onChange={number(setStats, "flatAttack")} /><Field label="Toutes les attaques augmentent" value={stats.attackPercent} onChange={number(setStats, "attackPercent")} suffix="%" min={-100} /></div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Dégâts monstres" value={stats.monsterDamage} onChange={number(setStats, "monsterDamage")} suffix="%" min={-100} /><Field label="Chance critique" value={stats.criticalChance} onChange={number(setStats, "criticalChance")} suffix="%" max={100} /><Field label="Dégâts critiques" value={stats.criticalDamage} onChange={number(setStats, "criticalDamage")} suffix="%" /></div>
             <div className="mt-3 grid gap-3 sm:grid-cols-4"><Field label="Chance de dégâts augmentés" value={stats.increasedDamageChance} onChange={number(setStats, "increasedDamageChance")} suffix="%" max={100} /><Field label="Force d’attaque du proc" value={stats.increasedDamagePercent} onChange={number(setStats, "increasedDamagePercent")} suffix="%" /><Field label="Chance critique augmenté" value={stats.increasedCriticalChance} onChange={number(setStats, "increasedCriticalChance")} suffix="%" max={100} /><Field label="Bonus critique augmenté" value={stats.increasedCriticalPercent} onChange={number(setStats, "increasedCriticalPercent")} suffix="%" /></div>
+            <div className="mt-5 rounded-xl border border-orange-900/60 bg-orange-950/20 p-3">
+              <div className="mb-1 text-xs font-black uppercase tracking-widest text-orange-300">🟠 Options PvE cumulées des deux armes</div>
+              <p className="mb-3 text-[11px] text-[#b9a4ca]">Les lignes orange de l’arme principale et secondaire s’additionnent et restent actives avec l’arme utilisée par la SP.</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="Chance du proc d’attaque" value={runic.attackPowerProcChance || 0} onChange={number(setRunic, "attackPowerProcChance")} suffix="%" max={100} /><Field label="Force d’attaque du proc" value={runic.attackPowerProcValue || 0} onChange={number(setRunic, "attackPowerProcValue")} suffix="%" /><Field label="Résistances adverses réduites" value={runic.enemyResistanceReduction || 0} onChange={number(setRunic, "enemyResistanceReduction")} /><Field label="Chaque élément augmente" value={runic.allElement || 0} onChange={number(setRunic, "allElement")} /></div>
+              <div className="mt-3 text-xs text-orange-200">DrokenA : <strong>35 % + 10 % = 45 %</strong> de chance · <strong>65 % + 90 % = 155 %</strong> d’attaque · <strong>45 + 35 = 80</strong> de baisse de résistance · <strong>311 + 30 = 341</strong> à chaque élément.</div>
+            </div>
             <div className="mt-5 border-t border-[#39254d] pt-4"><div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">💠 Effets runiques de l’arme</div><div className="grid gap-3 sm:grid-cols-3"><Field label="Toutes les attaques +" value={runic.flatAttack} onChange={number(setRunic, "flatAttack")} /><Field label="Dégâts monstres" value={runic.monsterDamage} onChange={number(setRunic, "monsterDamage")} suffix="%" /><Field label="Probabilité critique" value={runic.criticalChance} onChange={number(setRunic, "criticalChance")} suffix="%" /><Field label="Dégâts critiques" value={runic.criticalDamage} onChange={number(setRunic, "criticalDamage")} suffix="%" /><Field label="Dégâts dragons" value={runic.dragonDamage} onChange={number(setRunic, "dragonDamage")} suffix="%" /><Field label="Élément de la fée" value={runic.fairyElement} onChange={number(setRunic, "fairyElement")} /><Field label="Points SP attaque" value={runic.spAttack} onChange={number(setRunic, "spAttack")} /><Field label="Points SP élément" value={runic.spElement} onChange={number(setRunic, "spElement")} /><Field label="Toutes les attaques" value={runic.attackPercent} onChange={number(setRunic, "attackPercent")} suffix="%" /></div></div>
           </Section>
           <Section icon="🧚" title="Fées">
             <p className="mb-3 text-xs text-[#9f89b1]">L’élément d’attaque est déterminé automatiquement par la compétence de la SP. Ici tu contrôles uniquement la fée équipée et ses véritables bonus.</p>
             <EquipmentPicker label="Fée équipée" items={fairyEquipment} value={String(fairyDraft?.vnum || "")} onChange={(value) => { const fairy = fairyEquipment.find((item) => String(item.vnum) === value); if (!fairy) return setFairyDraft(null); const name = normalizeText(fairy.name); const next = { ...fairy, percent: Number(fairy.percent || fairy.data?.[1] || 0), attackPercent: Number(fairy.attackPercent || 0), criticalChance: Number(fairy.criticalChance || 0), elementIncrease: Number(fairy.elementIncrease || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : "dark" }; setFairyDraft(next); setStats((old) => ({ ...old, fairyElement: next.percent, attackPercent: Number(profile?.weapon?.attackPercent || 0) + next.attackPercent, criticalChance: Math.min(100, Number(profile?.combat?.criticalChance || 0) + next.criticalChance) })); }} />
             {fairyDraft && <div className="mt-4 grid gap-3 sm:grid-cols-2"><Field label="Pourcentage de la fée" value={fairyDraft.percent || 0} onChange={updateFairyDraft("percent")} suffix="%" max={200} /><Field label="Toutes les attaques augmentent" value={fairyDraft.attackPercent || 0} onChange={updateFairyDraft("attackPercent")} suffix="%" /><Field label="Probabilité critique" value={fairyDraft.criticalChance || 0} onChange={updateFairyDraft("criticalChance")} suffix="%" max={100} /><Field label="Élément de la fée augmente" value={fairyDraft.elementIncrease || 0} onChange={updateFairyDraft("elementIncrease")} /></div>}
-            <div className="mt-3 rounded-lg bg-[#12091d] px-3 py-2 text-xs text-emerald-300">Attaque actuelle : {ELEMENTS[stats.attackElement]?.icon} {ELEMENTS[stats.attackElement]?.label} · automatique via la compétence sélectionnée</div>
+            <div className="mt-3 rounded-lg bg-[#12091d] px-3 py-2 text-xs text-emerald-300">Attaque actuelle : {ELEMENTS[specialistAttackElement]?.icon} {ELEMENTS[specialistAttackElement]?.label} · automatique via la compétence sélectionnée</div>
           </Section>
         </div>
 
