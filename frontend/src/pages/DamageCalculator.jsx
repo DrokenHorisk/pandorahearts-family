@@ -218,6 +218,12 @@ export default function DamageCalculator() {
   const damageSkill = gameData.skills.find((skill) => String(skill.vnum) === skillId);
   const damageWeaponVnum = damageSkill?.secondary_weapon ? secondaryWeaponVnum : mainWeaponVnum;
   const damageWeapon = gameData.items.find((item) => String(item.vnum) === String(damageWeaponVnum));
+  const activeSpecialistCard = gameData.items.find((item) => String(item.vnum) === String(specialistCardVnum));
+  const activeSpecialistNumber = Number(activeSpecialistCard?.data?.[12] ?? -1) + 1;
+  const specialistElementCode = Number(damageSkill?.element || gameData.skills.find((skill) => Number(skill.specialist) === activeSpecialistNumber && Number(skill.element) > 0)?.element || 0);
+  const specialistAttackElement = ({ 1: "fire", 2: "water", 3: "light", 4: "dark" })[specialistElementCode] || stats.attackElement;
+  const monsterResistanceKey = ({ fire: "Fire", water: "Water", light: "Light", dark: "Shadow" })[specialistAttackElement];
+  const monsterElementResistance = Number(currentMonster?.resistances?.[monsterResistanceKey] ?? stats.resistance ?? 0);
   // L'arme est la source fiable pour le critique natif. Les anciennes
   // configurations pouvaient contenir un total déjà cumulé dans `stats`, ce
   // qui produisait des valeurs comme 77 % / 136 % après rechargement.
@@ -237,6 +243,8 @@ export default function DamageCalculator() {
   });
   const calculationInput = {
     ...stats,
+    attackElement: specialistAttackElement,
+    resistance: monsterElementResistance,
     weaponDamageMin: Number(stats.weaponDamageMin || damageWeapon?.data?.[1] || 0),
     weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
     flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack,
