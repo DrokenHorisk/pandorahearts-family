@@ -205,14 +205,38 @@ export default function DamageCalculator() {
     if (type === 131 && sub === 0) return { item, effect, bucket: "Attaque raid", value: first / 4, text: `Toutes les attaques en raid +${first / 4} %`, applied: monsterId === "1619" };
     if (type === 7 && sub === 4) return { item, effect, bucket: "Élément", value: first / 4, text: `Chaque élément +${first / 4}`, applied: true };
     if (type === 8 && sub === 0) return { item, effect, bucket: "Proc attaque", chance: first / 4, value: second / 4, text: `${first / 4} % de chance : force d’attaque +${second / 4} %`, applied: true };
+    if (type === 3 && sub === 0) return { item, effect, bucket: "Attaque fixe", value: first / 4, text: `Toutes les attaques +${first / 4}`, applied: true };
+    if (type === 96 && sub === 0) return { item, effect, bucket: "Fée", value: first / 4, text: `Élément de la fée équipée +${first / 4}`, applied: true };
+    if (type === 102 && sub === 2) return { item, effect, bucket: "SP élément", value: first / 4, text: `Points de compétence SP élément +${first / 4}`, applied: true };
+    if (type === 4 && sub === 4) return { item, effect, bucket: "Dégâts monstres", value: first / 4, text: `Dégâts contre les monstres +${first / 4} %`, applied: true };
+    if (type === 96 && sub === 1) return { item, effect, bucket: "Proc fée", chance: first / 4, value: second / 4, text: `${first / 4} % de chance : élément de la fée +${second / 4}`, applied: true };
     if (type === 5 && sub === 0) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Probabilité critique +${Math.abs(first)} %`, applied: true };
     if (type === 5 && sub === 1) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Dégâts critiques +${Math.abs(first)} %`, applied: true };
+    if (type === 4 && sub === 0) return { item, effect, bucket: "Précision", value: first / 4, text: `Précision de toutes les attaques +${first / 4}`, applied: false, decoded: true };
+    if (type === 5 && sub === 4) return { item, effect, bucket: "Défensif", value: Math.abs(first) / 4, text: `Dégâts critiques subis −${Math.abs(first) / 4} %`, applied: false, decoded: true };
+    if (type === 5 && sub === 3) return { item, effect, bucket: "Défensif", value: Math.abs(first) / 4, text: `Probabilité de subir un critique −${Math.abs(first) / 4} %`, applied: false, decoded: true };
+    if (type === 13 && sub === 0) return { item, effect, bucket: "Défensif", value: first / 4, text: `Résistances élémentaires personnelles +${first / 4}`, applied: false, decoded: true };
+    if (type === 33 && sub === 0) return { item, effect, bucket: "Défensif", value: first / 4, text: `HP maximums +${first / 4}`, applied: false, decoded: true };
+    if (type === 9 && [1, 2, 3].includes(sub)) return { item, effect, bucket: "Défensif", value: first / 4, text: `Défense ${sub === 1 ? "rapprochée" : sub === 2 ? "distance" : "magique"} +${first / 4}`, applied: false, decoded: true };
+    if (type === 19 && sub === 3) return { item, effect, bucket: "Utilitaire", value: first / 4, text: `Vitesse de déplacement +${first / 4}`, applied: false, decoded: true };
+    if (type === 87 && sub === 1) return { item, effect, bucket: "Utilitaire", value: first / 4, text: `Expérience héroïque +${first / 4} %`, applied: false, decoded: true };
+    if (type === 114 && sub === 4) return { item, effect, bucket: "Défensif", value: first / 4, text: `Dégâts softcrit ennemis −${first / 4} %`, applied: false, decoded: true };
+    if (type === 126 && sub === 3) return { item, effect, bucket: "Utilitaire", value: first / 4, text: `Chance de boîte de raid supplémentaire +${first / 4} %`, applied: false, decoded: true };
+    if (type === 45 && sub === 0) return { item, effect, bucket: "Défensif", value: second / 4, text: `Jusqu’au niveau ${Math.abs(first) / 4}, chance d’éviter un effet négatif : ${second / 4} %`, applied: false, decoded: true };
+    if (type === 128 && sub === 3) return { item, effect, bucket: "Effet de set", value: first, text: `Accorde l’effet de set n°${first}`, applied: false, decoded: true };
+    if (type === 25 || type === 95 || type === -1) return { item, effect, bucket: "Effet spécial", value: 0, text: `Déclenche l’effet spécial n°${second || first} (${Math.abs(first) / 4} %)`, applied: false, decoded: true };
     return { item, effect, bucket: "Autre", value: 0, text: `Effet ${type}.${sub} · valeurs ${first}${second ? ` / ${second}` : ""}`, applied: false };
   }));
   const itemResistanceReduction = equippedEffectRows.filter((row) => row.bucket === "Résistance" && row.applied).reduce((total, row) => total + row.value, 0);
   const itemAllElement = equippedEffectRows.filter((row) => row.bucket === "Élément" && row.applied).reduce((total, row) => total + row.value, 0);
   const itemAttackProcChance = equippedEffectRows.filter((row) => row.bucket === "Proc attaque" && row.applied).reduce((total, row) => total + row.chance, 0);
   const itemAttackProcValue = equippedEffectRows.filter((row) => row.bucket === "Proc attaque" && row.applied).reduce((total, row) => total + row.value, 0);
+  const itemFlatAttack = equippedEffectRows.filter((row) => row.bucket === "Attaque fixe" && row.applied).reduce((total, row) => total + row.value, 0);
+  const itemFairyElement = equippedEffectRows.filter((row) => row.bucket === "Fée" && row.applied).reduce((total, row) => total + row.value, 0);
+  const itemSpElement = equippedEffectRows.filter((row) => row.bucket === "SP élément" && row.applied).reduce((total, row) => total + row.value, 0);
+  const itemMonsterDamage = equippedEffectRows.filter((row) => row.bucket === "Dégâts monstres" && row.applied).reduce((total, row) => total + row.value, 0);
+  const itemFairyProcChance = equippedEffectRows.filter((row) => row.bucket === "Proc fée" && row.applied).reduce((total, row) => total + row.chance, 0);
+  const itemFairyProcValue = equippedEffectRows.filter((row) => row.bucket === "Proc fée" && row.applied).reduce((total, row) => total + row.value, 0);
   const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
   const dragonTarget = currentMonster?.name?.toLowerCase().includes("dragon");
@@ -279,13 +303,13 @@ export default function DamageCalculator() {
     resistance: monsterElementResistance,
     weaponDamageMin: Number(stats.weaponDamageMin || damageWeapon?.data?.[1] || 0),
     weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
-    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack,
-    monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
+    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack,
+    monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + itemMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
     criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance,
     criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage,
     criticalReduction: monsterCriticalReduction,
-    fairyElement: stats.fairyElement + runic.fairyElement,
-    elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower,
+    fairyElement: stats.fairyElement + runic.fairyElement + itemFairyElement,
+    elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower + itemSpElement,
     equipmentElement: Number(stats.equipmentElement || 0) + itemAllElement,
     attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack,
@@ -295,8 +319,8 @@ export default function DamageCalculator() {
     attackPowerProcValue: itemAttackProcValue,
     physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
     physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
-    fairyProcChance: String(equipment.wings) === "4531" ? 20 : 0,
-    fairyProcValue: String(equipment.wings) === "4531" ? 100 : 0,
+    fairyProcChance: itemFairyProcChance,
+    fairyProcValue: itemFairyProcValue,
   };
   const result = useMemo(() => calculateDamage(calculationInput), [calculationInput]);
   const damageScenarios = useMemo(() => calculateDamageScenarios(calculationInput), [calculationInput]);
@@ -970,12 +994,12 @@ export default function DamageCalculator() {
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {equippedEffectRows.map((row, index) => <div key={`${row.item.vnum}-${row.effect.BCardVNUM}-${row.effect.BCardSub}-${index}`} className={`flex gap-3 rounded-xl border p-3 ${row.applied ? "border-emerald-900/60 bg-emerald-950/20" : "border-orange-950 bg-[#160f0a]"}`}>
             <GameIcon src={row.item.icon_url} alt={row.item.name} className="h-12 w-12 shrink-0 rounded-lg bg-black/30 object-contain p-1" />
-            <div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-white">{row.item.name}</div><div className="mt-1 text-[11px] font-bold text-orange-200">{row.text}</div><div className="mt-1 flex flex-wrap gap-1"><span className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] uppercase text-[#cdb7a7]">{row.bucket}</span><span className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${row.applied ? "bg-emerald-900/50 text-emerald-300" : "bg-amber-900/40 text-amber-300"}`}>{row.applied ? "✓ Appliqué" : "À décoder"}</span><span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[9px] text-[#8e7c70]">BCard {row.effect.BCardVNUM}.{row.effect.BCardSub}</span></div></div>
+            <div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-white">{row.item.name}</div><div className="mt-1 text-[11px] font-bold text-orange-200">{row.text}</div><div className="mt-1 flex flex-wrap gap-1"><span className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] uppercase text-[#cdb7a7]">{row.bucket}</span><span className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${row.applied ? "bg-emerald-900/50 text-emerald-300" : row.decoded ? "bg-slate-800 text-slate-300" : "bg-amber-900/40 text-amber-300"}`}>{row.applied ? "✓ Appliqué" : row.decoded ? "Hors dégâts" : "À décoder"}</span><span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[9px] text-[#8e7c70]">BCard {row.effect.BCardVNUM}.{row.effect.BCardSub}</span></div></div>
           </div>)}
           {!equippedEffectRows.length && <div className="text-xs text-[#9c8170]">Aucun effet d’équipement chargé.</div>}
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-4">
-          {[["Réduction résistance", `−${itemResistanceReduction}`], ["Chaque élément", `+${itemAllElement}`], ["Chance proc attaque", `${itemAttackProcChance} %`], ["Force du proc", `+${itemAttackProcValue} %`]].map(([label, value]) => <div key={label} className="rounded-xl border border-orange-900/40 bg-black/20 p-3"><div className="text-[10px] font-bold uppercase text-[#bda18e]">{label}</div><div className="mt-1 text-xl font-black text-orange-300">{value}</div></div>)}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {[["Réduction résistance", `−${itemResistanceReduction}`], ["Chaque élément", `+${itemAllElement}`], ["Attaque fixe objets", `+${itemFlatAttack}`], ["Élément de fée objets", `+${itemFairyElement}`], ["Points SP élément", `+${itemSpElement}`], ["Dégâts monstres objets", `+${itemMonsterDamage} %`], ["Proc attaque", `${itemAttackProcChance} % / +${itemAttackProcValue} %`], ["Proc fée", `${itemFairyProcChance} % / +${itemFairyProcValue}`]].map(([label, value]) => <div key={label} className="rounded-xl border border-orange-900/40 bg-black/20 p-3"><div className="text-[10px] font-bold uppercase text-[#bda18e]">{label}</div><div className="mt-1 text-xl font-black text-orange-300">{value}</div></div>)}
         </div>
       </details>
 
