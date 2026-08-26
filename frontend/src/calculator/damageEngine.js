@@ -24,6 +24,26 @@ export function elementalAdvantage(attacker, target) {
   return cycle[attacker] === target ? 0.50 : 0;
 }
 
+const milestone = (points, table) => table.reduce((value, [required, bonus]) => points >= required ? bonus : value, 0);
+
+// Bonus réels accordés par les points d'une SP. Les bonus identiques des
+// paliers se remplacent par le palier supérieur ; ils ne se cumulent pas.
+export function specialistPointBonuses({ attack = 0, element = 0, hpMp = 0, perfectionAttack = 0, perfectionElement = 0 } = {}) {
+  const attackPoints = Math.max(0, numeric(attack));
+  const elementPoints = Math.max(0, numeric(element));
+  const hpPoints = Math.max(0, numeric(hpMp));
+  return {
+    flatAttack: attackPoints * 5
+      + milestone(attackPoints, [[10, 5], [30, 10], [70, 15], [90, 20], [110, 25], [120, 30]])
+      + milestone(hpPoints, [[10, 10], [20, 20], [30, 30], [40, 40], [50, 60], [60, 80], [70, 100], [80, 130], [90, 160], [100, 200], [110, 230]])
+      + Math.max(0, numeric(perfectionAttack)),
+    criticalChance: milestone(attackPoints, [[20, 2], [80, 5], [100, 8]]),
+    criticalDamage: milestone(attackPoints, [[40, 10], [90, 30], [100, 50], [120, 70]]),
+    elementPower: elementPoints + milestone(elementPoints, [[10, 2], [30, 4], [50, 6], [80, 10], [90, 12], [100, 14]])
+      + Math.max(0, numeric(perfectionElement)),
+  };
+}
+
 export function calculateDamage(input) {
   const attackMin = Math.max(0, numeric(input.attackMin));
   const attackMax = Math.max(attackMin, numeric(input.attackMax, attackMin));
@@ -35,13 +55,14 @@ export function calculateDamage(input) {
   const defenceUpgrade = Math.max(0, numeric(input.monsterDefenceUpgrade));
   const upgradePercent = upgradeDifferenceBonus(Math.max(0, weaponUpgrade - defenceUpgrade));
   const defenceUpgradePercent = upgradeDifferenceBonus(Math.max(0, defenceUpgrade - weaponUpgrade));
-  const softDamage = Math.max(-100, input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) / 100;
+  const softDamage = Math.max(-100, (input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) + numeric(input.attackPowerProcPercent)) / 100;
   const defencePercent = Math.max(-100, numeric(input.defencePercent)) / 100;
   const defenceReduction = clamp(input.defenceReduction, 0, 100) / 100;
+  const flatDefenceReduction = Math.max(0, numeric(input.flatDefenceReduction));
   const baseDefence = Math.max(0, numeric(input.baseDefence));
   // Compatibilité : l'ancien champ `defence` représente la défense d'armure.
   const armorDefence = Math.max(0, numeric(input.armorDefence, numeric(input.defence)));
-  const defenceBeforeBonuses = baseDefence + armorDefence * (1 + defenceUpgradePercent / 100);
+  const defenceBeforeBonuses = Math.max(0, baseDefence + armorDefence * (1 + defenceUpgradePercent / 100) - flatDefenceReduction);
   const effectiveDefence = Math.floor(defenceBeforeBonuses * (1 + defencePercent) * (1 - defenceReduction));
 
   const buildBase = (attack, weapon) => Math.floor(
@@ -51,9 +72,10 @@ export function calculateDamage(input) {
   const baseMax = buildBase(attackMax, weaponMax);
   const criticalReduction = Math.max(0, numeric(input.criticalReduction));
   const criticalMultiplier = Math.max(0, 1 + (numeric(input.criticalDamage, 150) - criticalReduction) / 100);
-  const physical = (base, critical = false) => Math.floor((base - effectiveDefence) * (critical ? criticalMultiplier : 1));
+  const physicalReduction = clamp(input.physicalReductionPercent, 0, 100) / 100;
+  const physical = (base, critical = false) => Math.floor((base - effectiveDefence) * (critical ? criticalMultiplier : 1) * (1 - physicalReduction));
 
-  const fairyFraction = Math.max(0, numeric(input.fairyElement) + numeric(input.elementPower)) / 100;
+  const fairyFraction = Math.max(0, numeric(input.fairyElement) + numeric(input.elementPower) + numeric(input.fairyProcElement)) / 100;
   const elementFlat = numeric(input.equipmentElement) + numeric(input.buffElement) + numeric(input.skillElement);
   const advantage = Number.isFinite(Number(input.elementAdvantage)) ? Number(input.elementAdvantage) : elementalAdvantage(input.attackElement, input.monsterElement);
   const effectiveResistance = numeric(input.resistance) - numeric(input.resistanceReduction);
@@ -89,4 +111,32 @@ export function calculateDamage(input) {
     criticalMultiplier, fairyFraction, elementAdvantage: advantage, morale, finalDamagePercent: finalPercent * 100,
     pveCorrection: correction, confidence: correction ? "calibrated" : "formula-98-99",
   };
+}
+
+export function calculateDamageScenarios(input) {
+  const attackProc = { chance: numeric(input.attackPowerProcChance), value: numeric(input.attackPowerProcValue) };
+  const reductionProc = { chance: numeric(input.physicalReductionChance), value: numeric(input.physicalReductionValue) };
+  const fairyProc = { chance: numeric(input.fairyProcChance), value: numeric(input.fairyProcValue) };
+  const states = [];
+  for (const fairy of [false, true]) for (const reduction of [false, true]) for (const attack of [false, true]) for (const critical of [false, true]) {
+    if ((fairy && !fairyProc.chance) || (reduction && !reductionProc.chance) || (attack && !attackProc.chance)) continue;
+    const result = calculateDamage({
+      ...input,
+      attackPowerProcPercent: attack ? attackProc.value : 0,
+      physicalReductionPercent: reduction ? reductionProc.value : 0,
+      fairyProcElement: fairy ? fairyProc.value : 0,
+    });
+    const effects = [];
+    if (critical) effects.push(`${result.criticalChance}% Probabilité ${Math.round(numeric(input.criticalDamage))}% Critique`);
+    if (attack) effects.push(`Avec une probabilité de ${attackProc.chance} %, la force d’attaque augmente de ${attackProc.value} %.`);
+    if (reduction) effects.push(`Avec une probabilité de ${reductionProc.chance} %, les dégâts provoqués par attaque à distance diminuent de ${reductionProc.value} %.`);
+    if (fairy) effects.push(`En cas d’attaque, l’élément de la fée équipée a une probabilité de ${fairyProc.chance} % d’augmenter de ${fairyProc.value}.`);
+    states.push({
+      id: `${critical ? "critical" : "normal"}-${attack ? "attack" : "base"}-${reduction ? "reduced" : "full"}-${fairy ? "fairy" : "base"}`,
+      min: critical ? result.criticalMin : result.normalMin,
+      max: critical ? result.criticalMax : result.normalMax,
+      critical, attack, reduction, fairy, effects,
+    });
+  }
+  return states;
 }
