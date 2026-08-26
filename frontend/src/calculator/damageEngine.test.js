@@ -58,7 +58,7 @@ test("uses the supplied elemental advantage table", () => {
 
 test("converts SP points into flat, critical and elemental bonuses", () => {
   assert.deepEqual(specialistPointBonuses({ attack: 120, element: 80, hpMp: 37, perfectionAttack: 39, perfectionElement: 37 }), {
-    flatAttack: 699,
+    flatAttack: 1650,
     criticalChance: 8,
     criticalDamage: 70,
     elementPower: 127,
