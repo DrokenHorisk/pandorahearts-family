@@ -27,6 +27,17 @@ test("elemental resistance and light versus dark are applied to E", () => {
   assert.ok(result.normalMin > calculateDamage({ ...base, resistance: 80 }).normalMin);
 });
 
+test("combined PvE weapon options reactivate element above 100 resistance", () => {
+  const base = {
+    attackMin: 1000, attackMax: 1000, attackElement: "light", monsterElement: "dark",
+    fairyElement: 100, elementPower: 100, equipmentElement: 341, resistance: 165,
+  };
+  assert.equal(calculateDamage(base).elementalMin, 0);
+  const reduced = calculateDamage({ ...base, resistanceReduction: 80 });
+  assert.equal(reduced.effectiveResistance, 85);
+  assert.ok(reduced.elementalMin > 0);
+});
+
 test("weapon and defence upgrades use their positive difference", () => {
   const base = { attackMin: 0, attackMax: 0, weaponDamageMin: 1000, weaponDamageMax: 1000, defence: 500, attackElement: "none", monsterElement: "none" };
   const upgraded = calculateDamage({ ...base, weaponUpgrade: 9 });
