@@ -33,10 +33,10 @@ export function specialistPointBonuses({ attack = 0, element = 0, hpMp = 0, perf
   const elementPoints = Math.max(0, numeric(element));
   const hpPoints = Math.max(0, numeric(hpMp));
   return {
-    flatAttack: attackPoints * 5
+    flatAttack: attackPoints * 10
       + milestone(attackPoints, [[10, 5], [30, 10], [70, 15], [90, 20], [110, 25], [120, 30]])
       + milestone(hpPoints, [[10, 10], [20, 20], [30, 30], [40, 40], [50, 60], [60, 80], [70, 100], [80, 130], [90, 160], [100, 200], [110, 230]])
-      + Math.max(0, numeric(perfectionAttack)),
+      + Math.max(0, numeric(perfectionAttack)) * 10,
     criticalChance: milestone(attackPoints, [[20, 2], [80, 5], [100, 8]]),
     criticalDamage: milestone(attackPoints, [[40, 10], [90, 30], [100, 50], [120, 70]]),
     elementPower: elementPoints + milestone(elementPoints, [[10, 2], [30, 4], [50, 6], [80, 10], [90, 12], [100, 14]])
