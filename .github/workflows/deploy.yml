@@ -1,4 +1,4 @@
-# Deployment trigger: cumulative PvE weapon options
+# Deployment trigger: remove scenario-specific calibration
 name: Test, build and deploy frontend
 
 # Production deploys are serialized and always back up PostgreSQL first.
