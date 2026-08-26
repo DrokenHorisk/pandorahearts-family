@@ -58,7 +58,10 @@ export function calculateDamage(input) {
   const defenceUpgrade = Math.max(0, numeric(input.monsterDefenceUpgrade));
   const upgradePercent = upgradeDifferenceBonus(Math.max(0, weaponUpgrade - defenceUpgrade));
   const defenceUpgradePercent = upgradeDifferenceBonus(Math.max(0, defenceUpgrade - weaponUpgrade));
-  const softDamage = Math.max(-100, (input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) + numeric(input.attackPowerProcPercent)) / 100;
+  const softDamage = Math.max(-100, input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) / 100;
+  // « La force d'attaque augmente de X % » multiplie la force déjà obtenue
+  // après les bonus soft ; ce n'est pas X points ajoutés au pourcentage soft.
+  const attackPowerProcMultiplier = 1 + Math.max(0, numeric(input.attackPowerProcPercent)) / 100;
   const defencePercent = Math.max(-100, numeric(input.defencePercent)) / 100;
   const defenceReduction = clamp(input.defenceReduction, 0, 100) / 100;
   const flatDefenceReduction = Math.max(0, numeric(input.flatDefenceReduction));
@@ -69,7 +72,7 @@ export function calculateDamage(input) {
   const effectiveDefence = Math.floor(defenceBeforeBonuses * (1 + defencePercent) * (1 - defenceReduction));
 
   const buildBase = (attack, weapon) => Math.floor(
-    (attack + attackBonus + skillAttack + weapon * (1 + upgradePercent / 100) + 15) * (1 + softDamage),
+    (attack + attackBonus + skillAttack + weapon * (1 + upgradePercent / 100) + 15) * (1 + softDamage) * attackPowerProcMultiplier,
   );
   const baseMin = buildBase(attackMin, weaponMin);
   const baseMax = buildBase(attackMax, weaponMax);
