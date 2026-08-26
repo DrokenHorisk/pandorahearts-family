@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { calculateDamage, ELEMENTS } from "../calculator/damageEngine";
+import { calculateDamage, calculateDamageScenarios, specialistPointBonuses, ELEMENTS } from "../calculator/damageEngine";
 import { MONSTERS, SKILLS } from "../calculator/monsters";
 import { getToken, getUser } from "../auth";
 import { API_BASE } from "../api";
@@ -197,28 +197,51 @@ export default function DamageCalculator() {
   const selectedPets = petIds.map((id) => gameData.monsters.find((item) => String(item.vnum) === id)).filter(Boolean);
   const selectedPetBlessings = selectedPets.map((pet) => gameData.buffs.find((buff) => buff.name === `Bénédiction de ${pet.name}`)).filter(Boolean);
   const selectedCombatCards = gameData.buffs.filter((buff) => buffIds.includes(String(buff.vnum)));
+  const selectedDebuffCards = gameData.buffs.filter((buff) => debuffIds.includes(String(buff.vnum)));
   const combatCardAttackPercent = selectedCombatCards.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const companionAttackPercent = selectedPartnerBuffs.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const petAttackPercent = selectedPetBlessings.flatMap((buff) => buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
   const passiveEffects = gameData.items.filter((item) => characterPassiveIds.includes(String(item.vnum))).flatMap((item) => [...(item.buffs || []), ...gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum) || skill.name?.trim().toLowerCase() === item.name?.trim().toLowerCase()).flatMap((skill) => skill.buffs || [])]);
   const equipmentEffects = Object.values(selectedEquipment).filter(Boolean).flatMap((item) => item.buffs || []);
   const automaticAttackPercent = [...passiveEffects, ...equipmentEffects].filter((effect) => Number(effect.BCardVNUM ?? effect.Type) === 44 && Number(effect.BCardSub ?? effect.SubType) === 1).reduce((total, effect) => total + Number(effect.EffectVal1 ?? effect.Value ?? 0) / 4, 0);
+  const allSelectedBuffEffects = [...selectedPartnerBuffs, ...selectedPetBlessings, ...selectedCombatCards].flatMap((buff) => buff.effects || []);
+  const raidMonsterDamage = monsterId === "1619" ? allSelectedBuffEffects.filter((effect) => Number(effect.BCardType ?? effect.BCardVNUM ?? effect.Type) === 129 && Number(effect.BCardSubType ?? effect.BCardSub ?? effect.SubType) === 1).reduce((total, effect) => total + Number(effect.EffectVal1 ?? effect.Value ?? 0) / 4, 0) : 0;
+  const selectedDebuffEffects = selectedDebuffCards.flatMap((buff) => buff.effects || []);
+  const automaticDefenceReduction = selectedDebuffEffects.filter((effect) => Number(effect.BCardType ?? effect.BCardVNUM ?? effect.Type) === 11).reduce((total, effect) => total + Math.max(0, Number(effect.EffectVal1 ?? effect.Value ?? 0)), 0);
+  const automaticResistanceReduction = selectedDebuffEffects.filter((effect) => Number(effect.BCardType ?? effect.BCardVNUM ?? effect.Type) === 14).reduce((total, effect) => total + Math.max(0, Number(effect.EffectVal1 ?? effect.Value ?? 0)), 0);
   const damageSkill = gameData.skills.find((skill) => String(skill.vnum) === skillId);
   const damageWeaponVnum = damageSkill?.secondary_weapon ? secondaryWeaponVnum : mainWeaponVnum;
   const damageWeapon = gameData.items.find((item) => String(item.vnum) === String(damageWeaponVnum));
-  const result = useMemo(() => calculateDamage({
+  const spBonuses = specialistPointBonuses({
+    attack: Number(spDraft?.attack || 0) + Number(runic.spAttack || 0),
+    element: Number(spDraft?.element || 0) + Number(runic.spElement || 0),
+    hpMp: Number(spDraft?.hpMp || 0),
+    perfectionAttack: Number(spDraft?.perfectionStats?.[0] || 0),
+    perfectionElement: Number(spDraft?.perfectionStats?.[2] || 0),
+  });
+  const calculationInput = {
     ...stats,
     weaponDamageMin: Number(stats.weaponDamageMin || damageWeapon?.data?.[1] || 0),
     weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
-    flatAttack: stats.flatAttack + runic.flatAttack + Number(spDraft?.attack || 0) + Number(spDraft?.perfectionStats?.[0] || 0),
-    monsterDamage: stats.monsterDamage + runic.monsterDamage + (dragonTarget ? runic.dragonDamage : 0),
-    criticalChance: stats.criticalChance + runic.criticalChance,
-    criticalDamage: stats.criticalDamage + runic.criticalDamage,
+    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack,
+    monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
+    criticalChance: stats.criticalChance + runic.criticalChance + spBonuses.criticalChance,
+    criticalDamage: stats.criticalDamage + runic.criticalDamage + spBonuses.criticalDamage,
     fairyElement: stats.fairyElement + runic.fairyElement,
-    elementPower: stats.elementPower + runic.spElement + Number(spDraft?.perfectionStats?.[2] || 0),
+    elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower,
     attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
-    runicAttack: stats.runicAttack + runic.spAttack,
-  }), [stats, runic, spDraft, heroicSetActive, dragonTarget, companionAttackPercent, petAttackPercent, combatCardAttackPercent, automaticAttackPercent, damageWeapon]);
+    runicAttack: stats.runicAttack,
+    flatDefenceReduction: automaticDefenceReduction,
+    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction,
+    attackPowerProcChance: monsterId === "1619" ? 45 : 0,
+    attackPowerProcValue: monsterId === "1619" ? 155 : 0,
+    physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
+    physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
+    fairyProcChance: String(equipment.wings) === "4531" ? 20 : 0,
+    fairyProcValue: String(equipment.wings) === "4531" ? 100 : 0,
+  };
+  const result = useMemo(() => calculateDamage(calculationInput), [calculationInput]);
+  const damageScenarios = useMemo(() => calculateDamageScenarios(calculationInput), [calculationInput]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === (nextSpecialist || loadedProfile.configuration?.specialistId)) || loadedProfile.specialists[0];
@@ -841,12 +864,10 @@ export default function DamageCalculator() {
         </div>}
       </section>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <ResultCard label="Dégâts normaux" accent="text-[#c295e6]" value={`${result.normalMin.toLocaleString("fr-FR")} ~ ${result.normalMax.toLocaleString("fr-FR")}`} />
-        <ResultCard label={`Coup critique · ${result.criticalChance}%`} accent="text-[#ef8fa8]" value={`${result.criticalMin.toLocaleString("fr-FR")} ~ ${result.criticalMax.toLocaleString("fr-FR")}`} />
-        <ResultCard label={`Dégâts augmentés · ${result.increasedDamageChance}%`} accent="text-[#f0b46d]" value={`${result.increasedMin.toLocaleString("fr-FR")} ~ ${result.increasedMax.toLocaleString("fr-FR")}`} />
-        <ResultCard label={`Critique + augmentés · ${result.increasedCriticalChance}%`} accent="text-[#ff718f]" value={`${result.criticalIncreasedMin.toLocaleString("fr-FR")} ~ ${result.criticalIncreasedMax.toLocaleString("fr-FR")}`} />
-      </div>
+      <section className="mb-6 rounded-2xl border border-[#4a315f] bg-[#180d26] p-4">
+        <div className="mb-3 text-xs font-black uppercase tracking-widest text-[#c48ce9]">Résultats selon les effets déclenchés</div>
+        <div className="grid gap-1.5">{damageScenarios.map((scenario) => <div key={scenario.id} className="grid gap-2 rounded-lg border border-[#3b3044] bg-[#111111] px-3 py-2 sm:grid-cols-[minmax(180px,1fr)_2fr] sm:items-center"><div className="text-center text-base font-black text-white">{scenario.min.toLocaleString("fr-FR")} ~ {scenario.max.toLocaleString("fr-FR")}</div><div className="text-[11px] leading-4 text-[#f09a37]">{scenario.effects.length ? scenario.effects.map((effect) => <span key={effect} className="block">{effect}</span>) : <span className="text-[#887c8e]">—</span>}</div></div>)}</div>
+      </section>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="space-y-5">
