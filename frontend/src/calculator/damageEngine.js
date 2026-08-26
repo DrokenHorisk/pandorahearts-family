@@ -35,7 +35,7 @@ export function calculateDamage(input) {
   const defenceUpgrade = Math.max(0, numeric(input.monsterDefenceUpgrade));
   const upgradePercent = upgradeDifferenceBonus(Math.max(0, weaponUpgrade - defenceUpgrade));
   const defenceUpgradePercent = upgradeDifferenceBonus(Math.max(0, defenceUpgrade - weaponUpgrade));
-  const softDamage = Math.max(-100, numeric(input.softDamagePercent, numeric(input.attackPercent))) / 100;
+  const softDamage = Math.max(-100, input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) / 100;
   const defencePercent = Math.max(-100, numeric(input.defencePercent)) / 100;
   const defenceReduction = clamp(input.defenceReduction, 0, 100) / 100;
   const baseDefence = Math.max(0, numeric(input.baseDefence));
