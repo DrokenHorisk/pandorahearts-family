@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateDamage, elementalAdvantage, upgradeDifferenceBonus } from "./damageEngine.js";
+import { calculateDamage, calculateDamageScenarios, elementalAdvantage, specialistPointBonuses, upgradeDifferenceBonus } from "./damageEngine.js";
 
 test("applies the PvE floors in the documented order", () => {
   const result = calculateDamage({ attackMin: 1000, attackMax: 1200, defence: 500, attackElement: "none", monsterElement: "none" });
@@ -54,4 +54,27 @@ test("uses the supplied elemental advantage table", () => {
   assert.equal(elementalAdvantage("light", "dark"), 2);
   assert.equal(elementalAdvantage("water", "none"), 0.3);
   assert.equal(elementalAdvantage("dark", "dark"), 0);
+});
+
+test("converts SP points into flat, critical and elemental bonuses", () => {
+  assert.deepEqual(specialistPointBonuses({ attack: 120, element: 80, hpMp: 37, perfectionAttack: 39, perfectionElement: 37 }), {
+    flatAttack: 699,
+    criticalChance: 8,
+    criticalDamage: 70,
+    elementPower: 127,
+  });
+});
+
+test("Nézarun procs produce all sixteen combinations", () => {
+  const scenarios = calculateDamageScenarios({
+    attackMin: 1000, attackMax: 1100, defence: 500, fairyElement: 80,
+    attackElement: "light", monsterElement: "dark", criticalChance: 37, criticalDamage: 546,
+    attackPowerProcChance: 45, attackPowerProcValue: 155,
+    physicalReductionChance: 95, physicalReductionValue: 75,
+    fairyProcChance: 20, fairyProcValue: 100,
+  });
+  assert.equal(scenarios.length, 16);
+  assert.equal(scenarios[0].effects.length, 0);
+  assert.match(scenarios[1].effects[0], /37% Probabilité 546% Critique/);
+  assert.ok(scenarios.find((scenario) => scenario.attack && scenario.reduction && scenario.fairy && scenario.critical));
 });
