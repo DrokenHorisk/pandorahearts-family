@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { calculateDamage, calculateDamageScenarios, specialistPointBonuses, ELEMENTS } from "../calculator/damageEngine";
-import { calibrateDrokenaNezarunScenarios } from "../calculator/nosapkiReference";
 import { MONSTERS, SKILLS } from "../calculator/monsters";
 import { getToken, getUser } from "../auth";
 import { API_BASE } from "../api";
@@ -330,7 +329,7 @@ export default function DamageCalculator() {
     fairyProcValue: String(equipment.wings) === "4531" ? 100 : itemFairyProcValue,
   };
   const result = useMemo(() => calculateDamage(calculationInput), [calculationInput]);
-  const damageScenarios = useMemo(() => calibrateDrokenaNezarunScenarios(calculateDamageScenarios(calculationInput), calculationInput, { isDroken, monsterId, skillId }), [calculationInput, isDroken, monsterId, skillId]);
+  const damageScenarios = useMemo(() => calculateDamageScenarios(calculationInput), [calculationInput]);
 
   const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
     const specialist = loadedProfile.specialists.find((item) => item.id === (nextSpecialist || loadedProfile.configuration?.specialistId)) || loadedProfile.specialists[0];
