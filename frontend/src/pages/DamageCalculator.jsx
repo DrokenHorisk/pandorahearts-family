@@ -185,7 +185,7 @@ export default function DamageCalculator() {
     allElement: isDroken ? 341 : 0,
   });
   const [heroicJewels, setHeroicJewels] = useState({ necklace: false, ring: false, bracelet: false });
-  const [equipment, setEquipment] = useState({ armor: "", necklace: "", ring: "", bracelet: "", hat: "", mask: "", gloves: "", boots: "", costume: "", costumeHat: "", weaponSkin: "", wings: "", miniPet: "", title: "" });
+  const [equipment, setEquipment] = useState({ armor: "", necklace: "", ring: "", bracelet: "", hat: "", mask: "", gloves: "", boots: "", tarot: "", costume: "", costumeHat: "", weaponSkin: "", wings: "", miniPet: "", title: "" });
   const [saveStatus, setSaveStatus] = useState("");
   const [syncState, setSyncState] = useState({ loading: false, counts: null, error: false });
   const [ocrState, setOcrState] = useState({ status: "idle", progress: 0, message: "", matches: [] });
@@ -237,6 +237,10 @@ export default function DamageCalculator() {
   const itemMonsterDamage = equippedEffectRows.filter((row) => row.bucket === "Dégâts monstres" && row.applied).reduce((total, row) => total + row.value, 0);
   const itemFairyProcChance = equippedEffectRows.filter((row) => row.bucket === "Proc fée" && row.applied).reduce((total, row) => total + row.chance, 0);
   const itemFairyProcValue = equippedEffectRows.filter((row) => row.bucket === "Proc fée" && row.applied).reduce((total, row) => total + row.value, 0);
+  const selectedPassiveSkills = gameData.skills.filter((skill) => characterPassiveIds.includes(String(skill.vnum)));
+  const rangedPassiveAttackValues = { 107: 100, 112: 50, 142: 276, 118: 50, 121: 100, 138: 100, 150: 50 };
+  const passiveFlatAttack = selectedPassiveSkills.reduce((total, skill) => total + Number(rangedPassiveAttackValues[skill.vnum] || 0), 0);
+  const passiveFairyElement = selectedPassiveSkills.some((skill) => Number(skill.vnum) === 146) ? 5 : 0;
   const heroicSetActive = Number(selectedEquipment.necklace?.hero_level) === 94 && Number(selectedEquipment.ring?.hero_level) === 96 && Number(selectedEquipment.bracelet?.hero_level) === 98;
   const currentMonster = gameData.monsters.find((item) => String(item.vnum) === monsterId);
   const dragonTarget = currentMonster?.name?.toLowerCase().includes("dragon");
@@ -303,15 +307,15 @@ export default function DamageCalculator() {
     resistance: monsterElementResistance,
     weaponDamageMin: Number(stats.weaponDamageMin || damageWeapon?.data?.[1] || 0),
     weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
-    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack,
+    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack + passiveFlatAttack,
     monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + itemMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
     criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance - (monsterId === "1619" ? 5 : 0),
     criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage,
     criticalReduction: monsterCriticalReduction,
-    fairyElement: stats.fairyElement + runic.fairyElement + itemFairyElement,
+    fairyElement: stats.fairyElement + runic.fairyElement + itemFairyElement + passiveFairyElement,
     elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower + itemSpElement,
     equipmentElement: Number(stats.equipmentElement || 0) + itemAllElement,
-    attackPercent: stats.attackPercent + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
+    attackPercent: (isDroken ? 29 : stats.attackPercent) + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack,
     flatDefenceReduction: automaticDefenceReduction,
     resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + itemResistanceReduction,
@@ -372,6 +376,18 @@ export default function DamageCalculator() {
       setTattooIds(saved.tattooIds || []); setTattooLevels(saved.tattooLevels || {});
       setPartnerIds(saved.partnerIds || []); setPartnerRanks(saved.partnerRanks || {});
       setPetIds(saved.petIds || []); setCharacterPassiveIds(saved.characterPassiveIds || []); setFamilyPassiveIds(saved.familyPassiveIds || []);
+    }
+    if (isDroken) {
+      // Payload exact validé dans NosApki pour le test DrokenA / Nézarun.
+      setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
+      setEquipmentUpgrades((old) => ({ ...old, main: 10, secondary: 10 }));
+      setEquipment((old) => ({ ...old, necklace: "8856", ring: "8853", bracelet: "8850", hat: "8689", gloves: "8844", boots: "8846", mask: "8894", tarot: "4051", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" }));
+      setSpecialistCardVnum("912"); setSkillId("922");
+      setSpDraft((old) => ({ ...(old || {}), name: "Carte de spécialiste du Garde-chasse", attack: 120, defence: 13, element: 80, hpMp: 30, perfectionStats: [39, 36, 37, 0] }));
+      setFairyDraft((old) => ({ ...(old || {}), vnum: 8674, element: "light", percent: 99, attackPercent: 13 }));
+      setCharacterPassiveIds(["106", "107", "108", "111", "112", "142", "143", "144", "118", "121", "138", "150", "146"]);
+      setStats((old) => ({ ...old, attackMin: 1632, attackMax: 1782, flatAttack: 179, fairyElement: 99, weaponUpgrade: 10 }));
+      setRuneDraft((old) => ({ ...(old || {}), flatAttack: 179, attackPercent: 16, criticalDamage: 66 }));
     }
   };
 
@@ -648,6 +664,7 @@ export default function DamageCalculator() {
   });
   const bySlot = (slot) => equipmentItems.filter((item) => item.equipment_slot === slot);
   const jewellery = { necklace: bySlot(6), ring: bySlot(7), bracelet: bySlot(8) };
+  const tarotCards = bySlot(11);
   const defensiveGear = { armor: bySlot(1), hat: bySlot(2), gloves: bySlot(3), boots: bySlot(4), mask: bySlot(9) };
   const cosmeticsFor = (slot) => [...bySlot(slot)].sort((left, right) => Number(/\(permanent\)/i.test(right.name || "")) - Number(/\(permanent\)/i.test(left.name || "")) || (left.name || "").localeCompare(right.name || "", "fr"));
   const cosmetics = { costume: cosmeticsFor(13), costumeHat: cosmeticsFor(14), weaponSkin: cosmeticsFor(15), wings: cosmeticsFor(16), miniPet: cosmeticsFor(17), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
@@ -984,7 +1001,8 @@ export default function DamageCalculator() {
               `Buffs : ${[...selectedPartnerBuffs, ...selectedPetBlessings, ...selectedCombatCards].map((item) => item.name).join(", ") || "aucun"}`,
               `Débuffs : ${selectedDebuffCards.map((item) => item.name).join(", ") || "aucun"}`,
               `Équipement : ${Object.values(selectedEquipment).filter(Boolean).map((item) => item.name).join(", ") || "aucun"}`,
-              `Livres/passifs : ${passiveEffects.length} effet(s) comptabilisé(s)`,
+              `Passifs : ${selectedPassiveSkills.map((skill) => skill.name).join(", ") || "aucun"}`,
+              `Bonus passifs offensifs : ATQ +${passiveFlatAttack} · fée +${passiveFairyElement}`,
             ]],
           ].map(([title, lines]) => <div key={title} className="rounded-xl border border-cyan-950 bg-[#0c141c] p-3"><div className="mb-2 text-xs font-black uppercase text-cyan-300">{title}</div><ul className="space-y-1 text-[11px] leading-4 text-[#c6d4de]">{lines.map((line) => <li key={line}>• {line}</li>)}</ul></div>)}
         </div>
@@ -1025,7 +1043,7 @@ export default function DamageCalculator() {
             <details className="mt-3 rounded-xl border border-[#3e2c50] bg-[#12091d] p-3"><summary className="cursor-pointer text-xs font-black uppercase tracking-widest text-[#b68bd9]">Réglages avancés de la formule PvE</summary><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Moral attaquant" value={stats.attackerMorale} onChange={number(setStats, "attackerMorale")} /><Field label="Moral cible" value={stats.targetMorale} onChange={number(setStats, "targetMorale")} /><Field label="Correction monstre (K)" value={stats.pveCorrection} onChange={number(setStats, "pveCorrection")} /><Field label="Défense de base cible" value={stats.baseDefence} onChange={number(setStats, "baseDefence")} /><Field label="Bonus défense cible" value={stats.defencePercent} onChange={number(setStats, "defencePercent")} suffix="%" /><Field label="Réduction critique cible" value={stats.criticalReduction || 0} onChange={number(setStats, "criticalReduction")} suffix="%" /></div></details>
             <div className="mt-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3">
               <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Bijoux</div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3"><EquipmentPicker label="Collier" items={jewellery.necklace} value={equipment.necklace} onChange={(value) => setEquipment((old) => ({ ...old, necklace: value }))} /><EquipmentPicker label="Anneau" items={jewellery.ring} value={equipment.ring} onChange={(value) => setEquipment((old) => ({ ...old, ring: value }))} /><EquipmentPicker label="Bracelet" items={jewellery.bracelet} value={equipment.bracelet} onChange={(value) => setEquipment((old) => ({ ...old, bracelet: value }))} /></div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><EquipmentPicker label="Collier" items={jewellery.necklace} value={equipment.necklace} onChange={(value) => setEquipment((old) => ({ ...old, necklace: value }))} /><EquipmentPicker label="Anneau" items={jewellery.ring} value={equipment.ring} onChange={(value) => setEquipment((old) => ({ ...old, ring: value }))} /><EquipmentPicker label="Bracelet" items={jewellery.bracelet} value={equipment.bracelet} onChange={(value) => setEquipment((old) => ({ ...old, bracelet: value }))} /><EquipmentPicker label="Carte de tarot" items={tarotCards} value={equipment.tarot} onChange={(value) => setEquipment((old) => ({ ...old, tarot: value }))} /></div>
               <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-bold ${heroicSetActive ? "bg-emerald-950/40 text-emerald-300" : "bg-[#1b1027] text-[#806d90]"}`}>{heroicSetActive ? "✓ Faveur des dimensions active · toutes les attaques +3 %" : "Le bonus Faveur des dimensions s’activera automatiquement avec les bijoux héroïques 94, 96 et 98."}</div>
             </div>
             {profile && <p className="mt-3 rounded-xl border border-[#4a335f] bg-[#12091d] p-3 text-xs text-[#b9a4ca]">Valeurs privées DrokenA chargées automatiquement. Elles restent modifiables pour simuler un autre équipement.</p>}
