@@ -6,7 +6,7 @@ import { API_BASE } from "../api";
 
 const defaults = {
   level: 99, jobLevel: 80, heroLevel: 99, attackMin: 1000, attackMax: 1200, flatAttack: 0, attackPercent: 0,
-  weaponDamageMin: 0, weaponDamageMax: 0, attackBonus: 0, softDamagePercent: 0,
+  weaponDamageMin: 0, weaponDamageMax: 0, attackBonus: 0,
   monsterDamage: 0, skillPower: 0, criticalChance: 20, criticalDamage: 150,
   attackElement: "light", fairyElement: 80, elementPower: 0, monsterElement: "dark",
   defence: 500, baseDefence: 0, defencePercent: 0, defenceReduction: 0, resistance: 0, resistanceReduction: 0,
