@@ -56,8 +56,11 @@ export function calculateDamage(input) {
   const skillAttack = Math.max(0, numeric(input.skillPower));
   const weaponUpgrade = clamp(input.weaponUpgrade, 0, 13);
   const defenceUpgrade = Math.max(0, numeric(input.monsterDefenceUpgrade));
-  const upgradePercent = upgradeDifferenceBonus(Math.max(0, weaponUpgrade - defenceUpgrade));
-  const defenceUpgradePercent = upgradeDifferenceBonus(Math.max(0, defenceUpgrade - weaponUpgrade));
+  // Les niveaux d'attaque de l'arme et de défense de l'armure sont deux
+  // coefficients indépendants. Une arme +10 conserve donc son +200 % face
+  // à l'armure +14 de Nézarun.
+  const upgradePercent = upgradeDifferenceBonus(weaponUpgrade);
+  const defenceUpgradePercent = upgradeDifferenceBonus(defenceUpgrade);
   // Type C: softcrit only. Type A bonuses are applied later to total damage.
   const softDamage = Math.max(-100, input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) / 100;
   const defencePercent = Math.max(-100, numeric(input.defencePercent)) / 100;
