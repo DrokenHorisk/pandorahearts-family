@@ -1,4 +1,4 @@
-# Deployment trigger: remove scenario-specific calibration
+# Deployment trigger: staged PvE formula and measured base attack
 name: Test, build and deploy frontend
 
 # Production deploys are serialized and always back up PostgreSQL first.
