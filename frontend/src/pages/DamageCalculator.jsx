@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { calculateDamage, calculateDamageScenarios, specialistPointBonuses, ELEMENTS } from "../calculator/damageEngine";
+import { activeWeaponInput, optionValue, passiveAttackToAdd } from "../calculator/damageInputs";
 import { MONSTERS, SKILLS } from "../calculator/monsters";
 import { getToken, getUser } from "../auth";
 import { API_BASE } from "../api";
@@ -17,7 +18,7 @@ const defaults = {
 };
 
 const fieldClass = "mt-1 w-full rounded-xl border border-[#3b2852] bg-[#12091d] px-3 py-2.5 text-[#f3eaff] outline-none transition focus:border-[#9b6bcc]";
-const number = (setter, key) => (event) => setter((old) => ({ ...old, [key]: Number(event.target.value) }));
+const number = (setter, key) => (event) => setter((old) => ({ ...old, [key]: key === "attackMin" && event.target.value === "" ? "" : Number(event.target.value) }));
 const cleanSpecialistName = (name = "") => name.replace(/^Carte de spécialiste (?:de l'|des |du |de |d’)/i, "").replace(/\s*\(Limité\)$/i, "").trim();
 const normalizeText = (value = "") => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const editDistance = (left, right) => {
@@ -193,6 +194,7 @@ export default function DamageCalculator() {
   const [ocrFairies, setOcrFairies] = useState([]);
   const [ocrCharacter, setOcrCharacter] = useState(null);
   const [equipmentUpgrades, setEquipmentUpgrades] = useState({ main: 0, secondary: 0, armor: 0 });
+  const [weaponRanges, setWeaponRanges] = useState({});
   const selectedEquipment = Object.fromEntries(Object.entries(equipment).map(([key, id]) => [key, gameData.items.find((item) => String(item.vnum) === id)]));
   const equippedMainWeapon = gameData.items.find((item) => String(item.vnum) === String(mainWeaponVnum));
   const equippedSecondaryWeapon = gameData.items.find((item) => String(item.vnum) === String(secondaryWeaponVnum));
@@ -289,10 +291,10 @@ export default function DamageCalculator() {
   // qui produisait des valeurs comme 77 % / 136 % après rechargement.
   const weaponCriticalChance = Number(damageWeapon?.data?.[4] ?? stats.criticalChance ?? 0);
   const weaponCriticalDamage = Number(damageWeapon?.data?.[5] ?? stats.criticalDamage ?? 150);
-  const weaponOptionCriticalChance = Number(runeDraft?.criticalChance || runic.criticalChance || 0);
-  const weaponOptionCriticalDamage = Number(runeDraft?.criticalDamage || runic.criticalDamage || 0);
-  const weaponOptionSpAttack = Number(runeDraft?.spAttack || runic.spAttack || 0);
-  const weaponOptionSpElement = Number(runeDraft?.spElement || runic.spElement || 0);
+  const weaponOptionCriticalChance = optionValue(runeDraft, runic, "criticalChance");
+  const weaponOptionCriticalDamage = optionValue(runeDraft, runic, "criticalDamage");
+  const weaponOptionSpAttack = optionValue(runeDraft, runic, "spAttack");
+  const weaponOptionSpElement = optionValue(runeDraft, runic, "spElement");
   const monsterCriticalReduction = (currentMonster?.monster_cards || []).filter((effect) => Number(effect.BCardVNUM) === 5 && Number(effect.BCardSub) === 4).reduce((total, effect) => total + Math.abs(Number(effect.EffectVal1 || 0)) / 4, 0);
   const spBonuses = specialistPointBonuses({
     attack: Number(spDraft?.attack || 0) + weaponOptionSpAttack,
@@ -303,11 +305,11 @@ export default function DamageCalculator() {
   });
   const calculationInput = {
     ...stats,
+    attackMinKnown: stats.attackMin !== "" && stats.attackMin != null,
     attackElement: specialistAttackElement,
     resistance: monsterElementResistance,
-    weaponDamageMin: Number(stats.weaponDamageMin || damageWeapon?.data?.[1] || 0),
-    weaponDamageMax: Number(stats.weaponDamageMax || damageWeapon?.data?.[2] || 0),
-    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack + passiveFlatAttack,
+    ...activeWeaponInput({ weapon: damageWeapon, secondary: !!damageSkill?.secondary_weapon, upgrades: equipmentUpgrades, ranges: weaponRanges }),
+    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack + passiveAttackToAdd(stats, passiveFlatAttack),
     monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + itemMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
     criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance - (monsterId === "1619" ? 5 : 0),
     criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage,
@@ -315,7 +317,10 @@ export default function DamageCalculator() {
     fairyElement: stats.fairyElement + runic.fairyElement + itemFairyElement + passiveFairyElement,
     elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower + itemSpElement,
     equipmentElement: Number(stats.equipmentElement || 0) + itemAllElement,
-    attackPercent: (isDroken ? 29 : stats.attackPercent) + runic.attackPercent + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
+    // Type A: applied after physical + element + morale. Type C is only the
+    // probabilistic attack-power proc passed by calculateDamageScenarios.
+    softDamagePercent: 0,
+    finalDamagePercent: Number(stats.attackPercent) + Number(runic.attackPercent) + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
     runicAttack: stats.runicAttack,
     flatDefenceReduction: automaticDefenceReduction,
     resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + itemResistanceReduction,
@@ -341,6 +346,10 @@ export default function DamageCalculator() {
     const fairyVnum = Number(fairy.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[fairy.element]) || 0);
     setFairyDraft({ ...fairy, vnum: fairyVnum });
     setRuneDraft({ ...loadedProfile.weapon });
+    setMainWeaponVnum(String(loadedProfile.weapon.vnum || ""));
+    setSecondaryWeaponVnum(String(loadedProfile.secondaryWeapon?.vnum || ""));
+    setEquipment((old) => ({ ...old, ...loadedProfile.equipmentSelections }));
+    setWeaponRanges(loadedProfile.configuration?.weaponRanges || {});
     setEquipmentUpgrades({ main: Number(loadedProfile.weapon.upgrade || 0), secondary: Number(loadedProfile.secondaryWeapon?.upgrade || 0), armor: Number(loadedProfile.equipmentUpgrades?.armor || 0) });
     setClassName((loadedProfile.character.className || "archer").toLowerCase());
     setStats((old) => ({
@@ -362,8 +371,8 @@ export default function DamageCalculator() {
     const saved = loadedProfile.configuration;
     if (saved) {
       if (saved.className) setClassName(saved.className);
-      if (saved.mainWeaponVnum) setMainWeaponVnum(String(saved.mainWeaponVnum));
-      if (saved.secondaryWeaponVnum) setSecondaryWeaponVnum(String(saved.secondaryWeaponVnum));
+      if (saved.mainWeaponVnum != null) setMainWeaponVnum(String(saved.mainWeaponVnum));
+      if (saved.secondaryWeaponVnum != null) setSecondaryWeaponVnum(String(saved.secondaryWeaponVnum));
       if (saved.equipment) setEquipment((old) => ({ ...old, ...saved.equipment }));
       if (saved.equipmentUpgrades) setEquipmentUpgrades((old) => ({ ...old, ...saved.equipmentUpgrades }));
       if (saved.runic) setRunic((old) => ({ ...old, ...saved.runic }));
@@ -377,17 +386,12 @@ export default function DamageCalculator() {
       setPartnerIds(saved.partnerIds || []); setPartnerRanks(saved.partnerRanks || {});
       setPetIds(saved.petIds || []); setCharacterPassiveIds(saved.characterPassiveIds || []); setFamilyPassiveIds(saved.familyPassiveIds || []);
     }
-    if (isDroken) {
-      // Payload exact validé dans NosApki pour le test DrokenA / Nézarun.
-      setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
-      setEquipmentUpgrades((old) => ({ ...old, main: 10, secondary: 10 }));
-      setEquipment((old) => ({ ...old, necklace: "8856", ring: "8853", bracelet: "8850", hat: "8689", gloves: "8844", boots: "8846", mask: "8894", tarot: "4051", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" }));
-      setSpecialistCardVnum("912"); setSkillId("922");
-      setSpDraft((old) => ({ ...(old || {}), name: "Carte de spécialiste du Garde-chasse", attack: 120, defence: 13, element: 80, hpMp: 30, perfectionStats: [39, 36, 37, 0] }));
-      setFairyDraft((old) => ({ ...(old || {}), vnum: 8674, element: "light", percent: 99, attackPercent: 13 }));
-      setCharacterPassiveIds(["106", "107", "108", "111", "112", "142", "143", "144", "118", "121", "138", "150", "146"]);
-      setStats((old) => ({ ...old, attackMin: 1632, attackMax: 1782, flatAttack: 179, fairyElement: 99, weaponUpgrade: 10 }));
-      setRuneDraft((old) => ({ ...(old || {}), flatAttack: 179, attackPercent: 16, criticalDamage: 66 }));
+    // One-time migration of the user's explicitly measured naked attack.
+    // Saving the marker preserves subsequent edits instead of resetting them.
+    if (isDroken && !saved?.stats?.nakedAttackMeasurementVersion) {
+      setStats((old) => ({ ...old, attackMin: "", attackMax: 1192,
+        baseIncludesPassiveAttack: true, nakedAttackMeasurementVersion: 1 }));
+      setWeaponRanges((old) => ({ 8815: { min: 1632, max: 1782 }, ...old }));
     }
   };
 
@@ -511,7 +515,7 @@ export default function DamageCalculator() {
       specialists: profile.specialists.map((specialist) => specialist.id === specialistId ? { ...specialist, ...spDraft, cardVnum: Number(specialistCardVnum) || specialist.cardVnum } : specialist),
       fairies: savedFairy ? profile.fairies.map((fairy) => fairy.id === fairyId ? { ...fairy, ...savedFairy, id: fairy.id } : fairy) : profile.fairies,
       configuration: {
-        className, mainWeaponVnum, secondaryWeaponVnum, equipment, equipmentUpgrades,
+        className, mainWeaponVnum, secondaryWeaponVnum, equipment, equipmentUpgrades, weaponRanges,
         stats: { ...stats }, runic: { ...runic }, runeDraft: { ...(runeDraft || {}) }, fairyDraft: savedFairy,
         monsterId, skillId, specialistCardVnum, specialistId, fairyId,
         buffIds, debuffIds, tattooIds, tattooLevels, partnerIds, partnerRanks, petIds,
@@ -682,9 +686,6 @@ export default function DamageCalculator() {
   const totalAutomaticAttack = companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent + (heroicSetActive ? 3 : 0);
   useEffect(() => {
     if (!profile || !gameData.items.length) return;
-    setMainWeaponVnum(String(profile.weapon.vnum || ""));
-    setSecondaryWeaponVnum(String(profile.secondaryWeapon?.vnum || ""));
-    if (profile.equipmentSelections) setEquipment((old) => ({ ...old, ...profile.equipmentSelections }));
     if (isDroken && !profile.configuration) {
       setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
       setEquipmentUpgrades({ main: 9, secondary: 0, armor: 8 });
@@ -694,7 +695,7 @@ export default function DamageCalculator() {
     }
     const profileSpecialist = profile.specialists.find((item) => item.id === specialistId) || profile.specialists[0];
     const matchingCard = gameData.items.find((item) => item.item_type === 4 && item.item_sub_type === 1 && item.class_id === classMask && cleanSpecialistName(item.name).toLowerCase().includes((profileSpecialist?.name || "").toLowerCase()));
-    if (matchingCard) setSpecialistCardVnum(String(matchingCard.vnum));
+    if (matchingCard && !specialistCardVnum) setSpecialistCardVnum(String(matchingCard.vnum));
   }, [profile, gameData.items.length, specialistId, classMask]);
   const importCharacterSheet = async (event) => {
     const file = event.target.files?.[0];
@@ -971,7 +972,7 @@ export default function DamageCalculator() {
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
             ["Attaque et arme", [
-              `A : ${stats.attackMin}–${stats.attackMax}`,
+              `A : ${stats.attackMin === "" ? "minimum inconnu" : stats.attackMin}–${stats.attackMax} · ${stats.baseIncludesPassiveAttack ? "passifs attaque déjà inclus" : "hors passifs attaque"}`,
               `W : ${calculationInput.weaponDamageMin}–${calculationInput.weaponDamageMax} · arme +${calculationInput.weaponUpgrade}`,
               `Attaque fixe cumulée : +${calculationInput.flatAttack}`,
               `Puissance du skill : +${calculationInput.skillPower || 0}`,
@@ -1002,7 +1003,7 @@ export default function DamageCalculator() {
               `Débuffs : ${selectedDebuffCards.map((item) => item.name).join(", ") || "aucun"}`,
               `Équipement : ${Object.values(selectedEquipment).filter(Boolean).map((item) => item.name).join(", ") || "aucun"}`,
               `Passifs : ${selectedPassiveSkills.map((skill) => skill.name).join(", ") || "aucun"}`,
-              `Bonus passifs offensifs : ATQ +${passiveFlatAttack} · fée +${passiveFairyElement}`,
+              `Passifs : ATQ ${stats.baseIncludesPassiveAttack ? "déjà incluse dans A (livres et +20 compris)" : `+${passiveFlatAttack}`} · fée +${passiveFairyElement}`,
             ]],
           ].map(([title, lines]) => <div key={title} className="rounded-xl border border-cyan-950 bg-[#0c141c] p-3"><div className="mb-2 text-xs font-black uppercase text-cyan-300">{title}</div><ul className="space-y-1 text-[11px] leading-4 text-[#c6d4de]">{lines.map((line) => <li key={line}>• {line}</li>)}</ul></div>)}
         </div>
@@ -1025,7 +1026,7 @@ export default function DamageCalculator() {
 
       <section className="mb-6 rounded-2xl border border-[#4a315f] bg-[#180d26] p-4">
         <div className="mb-3 text-xs font-black uppercase tracking-widest text-[#c48ce9]">Résultats selon les effets déclenchés</div>
-        <div className="grid gap-1.5">{damageScenarios.map((scenario) => <div key={scenario.id} className="grid gap-2 rounded-lg border border-[#3b3044] bg-[#111111] px-3 py-2 sm:grid-cols-[minmax(180px,1fr)_2fr] sm:items-center"><div className="text-center text-base font-black text-white">{scenario.min.toLocaleString("fr-FR")} ~ {scenario.max.toLocaleString("fr-FR")}</div><div className="text-[11px] leading-4 text-[#f09a37]">{scenario.effects.length ? scenario.effects.map((effect) => <span key={effect} className="block">{effect}</span>) : <span className="text-[#887c8e]">—</span>}</div></div>)}</div>
+        <div className="grid gap-1.5">{damageScenarios.map((scenario) => <div key={scenario.id} className="grid gap-2 rounded-lg border border-[#3b3044] bg-[#111111] px-3 py-2 sm:grid-cols-[minmax(180px,1fr)_2fr] sm:items-center"><div className="text-center text-base font-black text-white">{(scenario.min?.toLocaleString("fr-FR") ?? "inconnu")} ~ {scenario.max.toLocaleString("fr-FR")}</div><div className="text-[11px] leading-4 text-[#f09a37]">{scenario.effects.length ? scenario.effects.map((effect) => <span key={effect} className="block">{effect}</span>) : <span className="text-[#887c8e]">—</span>}</div></div>)}</div>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -1038,8 +1039,15 @@ export default function DamageCalculator() {
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[0]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedMainWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={mainWeaponVnum} onChange={(event) => setMainWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{mainWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select><input aria-label="Amélioration arme principale" title="Amélioration de l’arme principale" type="number" min="0" max="13" value={equipmentUpgrades.main} onChange={(event) => { const upgrade = Math.max(0, Math.min(13, Number(event.target.value))); setEquipmentUpgrades((old) => ({ ...old, main: upgrade })); if (!selectedSkill?.secondary_weapon) setStats((old) => ({ ...old, weaponUpgrade: upgrade })); }} className="mt-1 w-20 rounded-xl border border-[#3b2852] bg-[#12091d] px-2 py-2.5 text-center text-white" /></div><span className="mt-1 block text-[10px] font-normal normal-case text-[#806d90]">Amélioration +{equipmentUpgrades.main}</span></label>
               <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedSecondaryWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select><input aria-label="Amélioration arme secondaire" title="Amélioration de l’arme secondaire" type="number" min="0" max="13" value={equipmentUpgrades.secondary} onChange={(event) => { const upgrade = Math.max(0, Math.min(13, Number(event.target.value))); setEquipmentUpgrades((old) => ({ ...old, secondary: upgrade })); if (selectedSkill?.secondary_weapon) setStats((old) => ({ ...old, weaponUpgrade: upgrade })); }} className="mt-1 w-20 rounded-xl border border-[#3b2852] bg-[#12091d] px-2 py-2.5 text-center text-white" /></div><span className="mt-1 block text-[10px] font-normal normal-case text-[#806d90]">Amélioration +{equipmentUpgrades.secondary}</span></label>
             </div>}
+            <label className="mt-3 flex items-center gap-2 text-xs text-amber-200"><input type="checkbox" checked={!!stats.baseIncludesPassiveAttack} onChange={(event) => setStats((old) => ({ ...old, baseIncludesPassiveAttack: event.target.checked }))} />A est l’attaque affichée tout nu : livres et passifs d’attaque déjà inclus, non ajoutés à nouveau.</label>
+            {stats.baseIncludesPassiveAttack && <p className="mt-2 text-xs text-amber-200">Si les passifs d’attaque ou le niveau changent, relève à nouveau A en jeu. Le détail des compétences inconnues ne peut pas être recalculé automatiquement.</p>}
             {equipmentUpgrades.armor > 0 && <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded-lg bg-[#2a1938] px-2 py-1">Armure +{equipmentUpgrades.armor}</span></div>}
-            {damageWeapon && <div className="mt-3 rounded-xl border border-[#3e2c50] bg-[#12091d] px-3 py-2 text-xs text-[#bda9cc]">Dégâts de l’arme utilisée (W) chargés automatiquement : <strong className="text-emerald-300">{Number(damageWeapon.data?.[1] || 0).toLocaleString("fr-FR")}–{Number(damageWeapon.data?.[2] || 0).toLocaleString("fr-FR")}</strong></div>}
+            {damageWeapon && <div className="mt-3 rounded-xl border border-[#3e2c50] bg-[#12091d] p-3 text-xs text-[#bda9cc]">
+              <p>Plage de dégâts de l’arme utilisée (W) : {damageWeapon.name}. Ces valeurs remplacent celles de la base d’objets ; elles ne sont pas l’attaque naturelle (A).</p>
+              <div className="mt-2 grid grid-cols-2 gap-3">{[["min", "weaponDamageMin", "Dégâts arme min."], ["max", "weaponDamageMax", "Dégâts arme max."]].map(([key, inputKey, label]) => <Field key={key} label={label} value={calculationInput[inputKey]} onChange={(event) => { const value = Number(event.target.value); setWeaponRanges((old) => ({ ...old, [damageWeaponVnum]: { min: calculationInput.weaponDamageMin, max: calculationInput.weaponDamageMax, ...old[damageWeaponVnum], [key]: value } })); }} />)}</div>
+              <button type="button" className="mt-2 underline" onClick={() => setWeaponRanges((old) => { const next = { ...old }; delete next[damageWeaponVnum]; return next; })}>Reprendre la plage de la base d’objets</button>
+            </div>}
+            <p className="mt-2 text-xs text-amber-300">À vérifier : A doit exclure l’arme, la SP et les bonus ajoutés séparément. La plage NosApki « weapon_attack » appartient à W. Une ancienne valeur A n’est pas convertie automatiquement.</p>
             <details className="mt-3 rounded-xl border border-[#3e2c50] bg-[#12091d] p-3"><summary className="cursor-pointer text-xs font-black uppercase tracking-widest text-[#b68bd9]">Réglages avancés de la formule PvE</summary><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Moral attaquant" value={stats.attackerMorale} onChange={number(setStats, "attackerMorale")} /><Field label="Moral cible" value={stats.targetMorale} onChange={number(setStats, "targetMorale")} /><Field label="Correction monstre (K)" value={stats.pveCorrection} onChange={number(setStats, "pveCorrection")} /><Field label="Défense de base cible" value={stats.baseDefence} onChange={number(setStats, "baseDefence")} /><Field label="Bonus défense cible" value={stats.defencePercent} onChange={number(setStats, "defencePercent")} suffix="%" /><Field label="Réduction critique cible" value={stats.criticalReduction || 0} onChange={number(setStats, "criticalReduction")} suffix="%" /></div></details>
             <div className="mt-4 rounded-xl border border-[#46305a] bg-[#12091d] p-3">
               <div className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Bijoux</div>
@@ -1119,7 +1127,7 @@ export default function DamageCalculator() {
             <MultiDataPicker label="Effets débloqués par la famille" items={gameData.buffs} values={familyPassiveIds} onChange={setFamilyPassiveIds} placeholder="Rechercher un effet de famille…" />
           </Section>
           <Section icon="📊" title="Détail du calcul">
-            <dl className="space-y-3 text-sm">{[["Base après attaque/arme (B)", `${result.baseDamageMin.toLocaleString("fr-FR")} ~ ${result.baseDamageMax.toLocaleString("fr-FR")}`], ["Bonus de l’arme", `+${result.upgradeAttack.toLocaleString("fr-FR")} (+${result.weaponUpgrade})`], ["Dégâts physiques (N)", `${result.physicalMin.toLocaleString("fr-FR")} ~ ${result.physicalMax.toLocaleString("fr-FR")}`], ["Défense effective (V)", result.effectiveDefence.toLocaleString("fr-FR")], ["Résistance effective", `${result.effectiveResistance}%`], ["Avantage élémentaire (X)", `+${Math.round(result.elementAdvantage * 100)}%`], ["Part élémentaire (E)", `${result.elementalMin.toLocaleString("fr-FR")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`], ["Différence niveau/moral (M)", result.morale.toLocaleString("fr-FR")], ["Bonus finaux (G)", `${result.finalDamagePercent}%`], ["Correction monstre (K)", result.pveCorrection.toLocaleString("fr-FR")]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#39254d] pb-2"><dt className="text-[#a991bd]">{label}</dt><dd className="font-black">{value}</dd></div>)}</dl>
+            <dl className="space-y-3 text-sm">{[["Base après attaque/arme (B)", `${(result.baseDamageMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.baseDamageMax.toLocaleString("fr-FR")}`], ["Bonus de l’arme", `+${result.upgradeAttack.toLocaleString("fr-FR")} (+${result.weaponUpgrade})`], ["Dégâts physiques (N)", `${(result.physicalMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.physicalMax.toLocaleString("fr-FR")}`], ["Défense effective (V)", result.effectiveDefence.toLocaleString("fr-FR")], ["Résistance effective", `${result.effectiveResistance}%`], ["Avantage élémentaire (X)", `+${Math.round(result.elementAdvantage * 100)}%`], ["Part élémentaire (E)", `${(result.elementalMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`], ["Différence niveau/moral (M)", result.morale.toLocaleString("fr-FR")], ["Bonus finaux (G)", `${result.finalDamagePercent}%`], ["Correction monstre (K)", result.pveCorrection.toLocaleString("fr-FR")]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#39254d] pb-2"><dt className="text-[#a991bd]">{label}</dt><dd className="font-black">{value}</dd></div>)}</dl>
             <p className="mt-4 rounded-xl border border-[#705128] bg-[#2c1d13] p-3 text-xs leading-relaxed text-[#f1ca91]">Le moteur est encore en calibration. La prochaine étape branchera les vraies compétences, monstres, buffs et effets, puis l’import automatique de fiche.</p>
           </Section>
           <Section icon="🖼️" title="Import de fiche">
