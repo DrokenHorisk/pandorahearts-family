@@ -67,6 +67,19 @@ def _partner_specialist(vnum: int):
 
 def _summary(row):
     payload = row.payload or {}
+    skill_cards = payload.get("BCards") or []
+    # NosWiki encode les valeurs de compétence en quarts :
+    # 3/2 = attaque de compétence, 7/2 = énergie de compétence.
+    skill_attack = sum(
+        float(card.get("Value") or 0) / 4
+        for card in skill_cards
+        if int(card.get("Type") or 0) == 3 and int(card.get("SubType") or 0) == 2
+    )
+    skill_element = sum(
+        float(card.get("Value") or 0) / 4
+        for card in skill_cards
+        if int(card.get("Type") or 0) == 7 and int(card.get("SubType") or 0) == 2
+    )
     return {
         "kind": row.kind,
         "vnum": row.vnum,
@@ -88,7 +101,8 @@ def _summary(row):
         "defence_upgrade": (payload.get("Armor") or {}).get("Upgrade"),
         "resistances": payload.get("Resistances"),
         "mp_cost": payload.get("MPCost"),
-        "power": payload.get("Damage") or payload.get("Power") or payload.get("SkillPower") or 0,
+        "power": payload.get("Damage") or payload.get("Power") or payload.get("SkillPower") or skill_attack or 0,
+        "skill_element": skill_element,
         "skill_type": payload.get("Type"),
         "description_codes": payload.get("DescriptionCodes"),
         "buffs": payload.get("Buffs") or payload.get("BCards"),
