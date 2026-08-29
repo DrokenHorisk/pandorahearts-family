@@ -19,21 +19,11 @@ export const DROKENA_NEZARUN_REFERENCE = {
   "critical-attack-reduced-fairy": [131482, 133463],
 };
 
-export function isDrokenaNezarunReference(input, context = {}) {
-  return context.isDroken && String(context.monsterId) === "1619" && String(context.skillId) === "922"
-    && Number(input.attackMin) === 1632 && Number(input.attackMax) === 1782
-    && Number(input.weaponDamageMin) === 1400 && Number(input.weaponDamageMax) === 1550
-    && Number(input.weaponUpgrade) === 10 && Number(input.flatAttack) === 3145
-    && Number(input.attackPercent) === 113 && Number(input.monsterDamage) === 15
-    && Number(input.criticalChance) === 37 && Number(input.criticalDamage) === 546
-    && Number(input.fairyElement) === 158 && Number(input.equipmentElement) === 341
-    && Number(input.resistance) === 165 && Number(input.resistanceReduction) === 86;
-}
-
-export function calibrateDrokenaNezarunScenarios(scenarios, input, context) {
-  if (!isDrokenaNezarunReference(input, context)) return scenarios;
-  return scenarios.map((scenario) => {
-    const reference = DROKENA_NEZARUN_REFERENCE[scenario.id];
-    return reference ? { ...scenario, min: reference[0], max: reference[1], calibrated: true } : scenario;
+// Comparison only: never replace calculated results with the reference.
+export function compareNosapkiReference(scenarios) {
+  return Object.entries(DROKENA_NEZARUN_REFERENCE).map(([id, expected]) => {
+    const actual = scenarios.find((scenario) => scenario.id === id);
+    return { id, expected, actual: actual ? [actual.min, actual.max] : null,
+      matches: !!actual && actual.min === expected[0] && actual.max === expected[1] };
   });
 }
