@@ -39,7 +39,8 @@ jobs:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: npm run build
   deploy-production:
-    if: github.event_name == 'push'
+    # A manual Run workflow must deploy too; the previous push-only guard skipped this job.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: test-build
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
