@@ -20,11 +20,21 @@ test("legacy attackPercent feeds the soft Q multiplier", () => {
   assert.equal(result.baseDamageMin, 1218);
 });
 
-test("attack-power proc multiplies the already increased attack force", () => {
-  const base = calculateDamage({ attackMin: 1000, attackMax: 1000, attackPercent: 100, attackElement: "none", monsterElement: "none" });
-  const proc = calculateDamage({ attackMin: 1000, attackMax: 1000, attackPercent: 100, attackPowerProcPercent: 155, attackElement: "none", monsterElement: "none" });
-  assert.equal(base.baseDamageMin, 2030);
-  assert.equal(proc.baseDamageMin, 5176);
+test("type C attack-power proc increases base before defence", () => {
+  const base = calculateDamage({ attackMin: 1000, attackMax: 1000, defence: 500, softDamagePercent: 0, attackElement: "none", monsterElement: "none" });
+  const proc = calculateDamage({ attackMin: 1000, attackMax: 1000, defence: 500, softDamagePercent: 155, attackElement: "none", monsterElement: "none" });
+  assert.equal(base.baseDamageMin, 1015);
+  assert.equal(proc.baseDamageMin, 2588);
+  assert.equal(base.normalMin, 515);
+  assert.equal(proc.normalMin, 2088);
+});
+
+test("type A bonus is applied after physical, element and morale", () => {
+  const base = { attackMin: 1000, attackMax: 1000, defence: 500, fairyElement: 50, attackElement: "light", monsterElement: "dark", attackerLevel: 99, targetLevel: 90 };
+  const plain = calculateDamage(base);
+  const boosted = calculateDamage({ ...base, finalDamagePercent: 20 });
+  assert.equal(boosted.baseDamageMin, plain.baseDamageMin);
+  assert.equal(boosted.normalMin, Math.floor((plain.physicalMin + plain.elementalMin + plain.morale) * 1.2));
 });
 
 test("elemental resistance and light versus dark are applied to E", () => {
