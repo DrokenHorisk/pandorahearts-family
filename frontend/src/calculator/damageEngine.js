@@ -18,8 +18,8 @@ export function upgradeDifferenceBonus(difference) {
 export function elementalAdvantage(attacker, target) {
   if (!attacker || attacker === "none" || attacker === target) return 0;
   if (target === "none") return 0.30;
-  if (attacker === "light" && target === "dark") return 2;
-  if (attacker === "fire" && target === "water") return 1;
+  if ((attacker === "light" && target === "dark") || (attacker === "dark" && target === "light")) return 2;
+  if ((attacker === "fire" && target === "water") || (attacker === "water" && target === "fire")) return 1;
   const cycle = { fire: "dark", dark: "water", water: "light", light: "fire" };
   return cycle[attacker] === target ? 0.50 : 0;
 }
@@ -58,10 +58,8 @@ export function calculateDamage(input) {
   const defenceUpgrade = Math.max(0, numeric(input.monsterDefenceUpgrade));
   const upgradePercent = upgradeDifferenceBonus(Math.max(0, weaponUpgrade - defenceUpgrade));
   const defenceUpgradePercent = upgradeDifferenceBonus(Math.max(0, defenceUpgrade - weaponUpgrade));
+  // Type C: softcrit only. Type A bonuses are applied later to total damage.
   const softDamage = Math.max(-100, input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) / 100;
-  // « La force d'attaque augmente de X % » multiplie la force déjà obtenue
-  // après les bonus soft ; ce n'est pas X points ajoutés au pourcentage soft.
-  const attackPowerProcMultiplier = 1 + Math.max(0, numeric(input.attackPowerProcPercent)) / 100;
   const defencePercent = Math.max(-100, numeric(input.defencePercent)) / 100;
   const defenceReduction = clamp(input.defenceReduction, 0, 100) / 100;
   const flatDefenceReduction = Math.max(0, numeric(input.flatDefenceReduction));
@@ -72,14 +70,14 @@ export function calculateDamage(input) {
   const effectiveDefence = Math.floor(defenceBeforeBonuses * (1 + defencePercent) * (1 - defenceReduction));
 
   const buildBase = (attack, weapon) => Math.floor(
-    (attack + attackBonus + skillAttack + weapon * (1 + upgradePercent / 100) + 15) * (1 + softDamage) * attackPowerProcMultiplier,
+    (attack + attackBonus + skillAttack + weapon * (1 + upgradePercent / 100) + 15) * (1 + softDamage),
   );
   const baseMin = buildBase(attackMin, weaponMin);
   const baseMax = buildBase(attackMax, weaponMax);
   const criticalReduction = Math.max(0, numeric(input.criticalReduction));
   const criticalMultiplier = Math.max(0, 1 + (numeric(input.criticalDamage, 150) - criticalReduction) / 100);
   const physicalReduction = clamp(input.physicalReductionPercent, 0, 100) / 100;
-  const physical = (base, critical = false) => Math.floor((base - effectiveDefence) * (critical ? criticalMultiplier : 1) * (1 - physicalReduction));
+  const physical = (base, critical = false) => Math.floor(Math.max(0, base - effectiveDefence) * (critical ? criticalMultiplier : 1) * (1 - physicalReduction));
 
   const fairyFraction = Math.max(0, numeric(input.fairyElement) + numeric(input.elementPower) + numeric(input.fairyProcElement)) / 100;
   const elementFlat = numeric(input.equipmentElement) + numeric(input.buffElement) + numeric(input.skillElement);
@@ -115,7 +113,11 @@ export function calculateDamage(input) {
     effectiveDefence, effectiveResistance, weaponUpgrade, monsterDefenceUpgrade: defenceUpgrade, upgradePercent, defenceUpgradePercent,
     upgradeAttack: Math.floor(((weaponMin + weaponMax) / 2) * upgradePercent / 100), baseDamageMin: baseMin, baseDamageMax: baseMax,
     criticalMultiplier, fairyFraction, elementAdvantage: advantage, morale, finalDamagePercent: finalPercent * 100,
-    pveCorrection: correction, confidence: correction ? "calibrated" : "formula-98-99",
+    pveCorrection: correction, confidence: "unverified",
+    ...(input.attackMinKnown === false ? {
+      normalMin: null, criticalMin: null, increasedMin: null, criticalIncreasedMin: null,
+      physicalMin: null, elementalMin: null, baseDamageMin: null,
+    } : {}),
   };
 }
 
@@ -128,7 +130,7 @@ export function calculateDamageScenarios(input) {
     if ((fairy && !fairyProc.chance) || (reduction && !reductionProc.chance) || (attack && !attackProc.chance)) continue;
     const result = calculateDamage({
       ...input,
-      attackPowerProcPercent: attack ? attackProc.value : 0,
+      softDamagePercent: attack ? attackProc.value : 0,
       physicalReductionPercent: reduction ? reductionProc.value : 0,
       fairyProcElement: fairy ? fairyProc.value : 0,
     });
