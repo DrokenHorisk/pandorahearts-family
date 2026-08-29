@@ -55,15 +55,17 @@ test("combined PvE weapon options reactivate element above 100 resistance", () =
   assert.ok(reduced.elementalMin > 0);
 });
 
-test("weapon and defence upgrades use their positive difference", () => {
+test("weapon and defence upgrades keep their own levels", () => {
   const base = { attackMin: 0, attackMax: 0, weaponDamageMin: 1000, weaponDamageMax: 1000, defence: 500, attackElement: "none", monsterElement: "none" };
   const upgraded = calculateDamage({ ...base, weaponUpgrade: 9 });
   assert.equal(upgraded.upgradePercent, 120);
   assert.equal(upgraded.upgradeAttack, 1200);
   assert.equal(upgraded.normalMin, 1715);
   const defended = calculateDamage({ ...base, weaponUpgrade: 9, monsterDefenceUpgrade: 14 });
-  assert.equal(defended.defenceUpgradePercent, 43);
-  assert.equal(defended.effectiveDefence, 715);
+  assert.equal(defended.upgradePercent, 120);
+  assert.equal(defended.defenceUpgradePercent, 200);
+  assert.equal(defended.effectiveDefence, 1500);
+  assert.equal(defended.normalMin, 715);
 });
 
 test("undocumented upgrade differences are capped at the supplied +200% tier", () => {
