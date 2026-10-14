@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeWeaponInput, optionValue, passiveAttackToAdd } from "./damageInputs.js";
+import { activeWeaponInput, optionValue, passiveAttackToAdd, readDamageProc, targetDamageReductionProc } from "./damageInputs.js";
 import { calculateDamage, calculateDamageScenarios, elementalAdvantage } from "./damageEngine.js";
 
 test("measured naked attack already includes books and the additional 20", () => {
@@ -16,6 +16,26 @@ test("measured naked attack already includes books and the additional 20", () =>
 test("zeroing an option does not restore an older saved value", () => {
   assert.equal(optionValue({ criticalDamage: 0 }, { criticalDamage: 66 }, "criticalDamage"), 0);
   assert.equal(optionValue(null, { criticalDamage: 66 }, "criticalDamage"), 66);
+});
+
+test("NosWiki fairy proc values are read from the card without a wing-specific override", () => {
+  assert.deepEqual(readDamageProc({ BCardVNUM: 96, BCardSub: 1, EffectVal1: 80, EffectVal2: 1280 }),
+    { kind: "fairyElement", chance: 20, value: 320 });
+});
+
+test("target ranged damage reduction comes from monster BCard 11/32", () => {
+  const cards = [
+    { BCardVNUM: 11, BCardSub: 22, EffectVal1: 100, EffectVal2: 200 },
+    { BCardVNUM: 11, BCardSub: 32, EffectVal1: 264, EffectVal2: 300 },
+  ];
+  assert.deepEqual(targetDamageReductionProc(cards, "ranged"), { chance: 66, value: 75 });
+  assert.deepEqual(targetDamageReductionProc(cards, "melee"), { chance: 25, value: 50 });
+  assert.deepEqual(targetDamageReductionProc([], "ranged"), { chance: 0, value: 0 });
+});
+
+test("all-attack reduction is used when no matching attack type is present", () => {
+  const cards = [{ BCardVNUM: 11, BCardSub: 12, EffectVal1: 80, EffectVal2: 160 }];
+  assert.deepEqual(targetDamageReductionProc(cards, "ranged"), { chance: 20, value: 40 });
 });
 
 test("weapon ranges belong to an item, not to character base attack", () => {
@@ -42,7 +62,7 @@ test("opposed elemental advantages work in both directions", () => {
 test("changing weapon, resistance and fairy recalculates actual scenarios", () => {
   const input = { attackMin: 200, weaponDamageMin: 1000, weaponDamageMax: 1100, defence: 100,
     fairyElement: 100, resistance: 50, attackElement: "light", monsterElement: "dark",
-    attackPowerProcChance: 45, attackPowerProcValue: 155, fairyProcChance: 20, fairyProcValue: 100 };
+    attackPowerProcChance: 45, attackPowerProcValue: 155, fairyProcChance: 20, fairyProcValue: 320 };
   const original = calculateDamageScenarios(input);
   for (const change of [{ weaponDamageMin: 1200, weaponDamageMax: 1300 }, { resistance: 40 }, { fairyElement: 110 }]) {
     const changed = calculateDamageScenarios({ ...input, ...change });
