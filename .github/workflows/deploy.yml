@@ -49,6 +49,11 @@ jobs:
     concurrency:
       group: pandorahearts-production
       cancel-in-progress: false
+    env:
+      COMPOSE_PROJECT: pandorahearts
+      PRODUCTION_DIR: /home/droken/pandorahearts
+      PRODUCTION_ENV_FILE: /home/droken/pandorahearts/.env
+      RELEASE_DIR: /tmp/pandorahearts-release-${{ github.run_id }}
     defaults:
       run:
         shell: bash
@@ -59,7 +64,7 @@ jobs:
           set -euo pipefail
           test -f docker-compose.yml
           test -d .git
-          docker compose config --quiet
+          docker compose --project-name "$COMPOSE_PROJECT" config --quiet
 
       - name: Backup PostgreSQL
         run: |
@@ -67,16 +72,17 @@ jobs:
           backup_dir=/home/droken/pandorahearts-backups
           mkdir -p "$backup_dir"
           backup_file="$backup_dir/pandorahearts_$(date +%Y%m%d_%H%M%S).sql"
-          docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_file"
+          docker compose --project-name "$COMPOSE_PROJECT" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_file"
           test -s "$backup_file"
           echo "Backup created: $backup_file"
 
       - name: Update source safely
         run: |
           set -euo pipefail
-          git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
+          git -C "$PRODUCTION_DIR" fetch origin main
+          git -C "$PRODUCTION_DIR" worktree add --detach "$RELEASE_DIR" "$GITHUB_SHA"
+          test -f "$RELEASE_DIR/docker-compose.yml"
+          docker compose --project-name "$COMPOSE_PROJECT" --env-file "$PRODUCTION_ENV_FILE" --file "$RELEASE_DIR/docker-compose.yml" config --quiet
 
       - name: Build and restart services
         run: |
@@ -84,12 +90,12 @@ jobs:
           docker_config="$(mktemp -d)"
           trap 'rm -rf "$docker_config"' EXIT
           export DOCKER_CONFIG="$docker_config"
-          docker compose up -d --build
+          docker compose --project-name "$COMPOSE_PROJECT" --env-file "$PRODUCTION_ENV_FILE" --file "$RELEASE_DIR/docker-compose.yml" up -d --build
 
       - name: Verify production
         run: |
           set -euo pipefail
-          docker compose ps
+          docker compose --project-name "$COMPOSE_PROJECT" --env-file "$PRODUCTION_ENV_FILE" --file "$RELEASE_DIR/docker-compose.yml" ps
           for attempt in {1..20}; do
             if curl --fail --silent http://127.0.0.1:8000/health >/dev/null \
               && curl --fail --silent http://127.0.0.1:3001/calculator >/dev/null; then
@@ -99,13 +105,13 @@ jobs:
             sleep 3
           done
           echo "Production health check failed" >&2
-          docker compose logs --tail=100 backend frontend
+          docker compose --project-name "$COMPOSE_PROJECT" --env-file "$PRODUCTION_ENV_FILE" --file "$RELEASE_DIR/docker-compose.yml" logs --tail=100 backend frontend
           exit 1
 
       - name: Synchronize NosWiki game database
         run: |
           set -euo pipefail
-          timeout 10m docker compose exec -T backend python - <<'PY'
+          timeout 10m docker compose --project-name "$COMPOSE_PROJECT" --env-file "$PRODUCTION_ENV_FILE" --file "$RELEASE_DIR/docker-compose.yml" exec -T backend python - <<'PY'
           from api.db import SessionLocal
           from api.noswiki import sync_all
 
@@ -116,3 +122,11 @@ jobs:
           finally:
               db.close()
           PY
+
+      - name: Remove temporary release checkout
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -d "$RELEASE_DIR" ]; then
+            git -C "$PRODUCTION_DIR" worktree remove "$RELEASE_DIR"
+          fi
