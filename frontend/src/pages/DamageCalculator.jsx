@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { calculateDamage, calculateDamageScenarios, specialistPointBonuses, ELEMENTS } from "../calculator/damageEngine";
-import { activeWeaponInput, optionValue, passiveAttackToAdd } from "../calculator/damageInputs";
+import { activeWeaponInput, optionValue, passiveAttackToAdd, readDamageProc, targetDamageReductionProc } from "../calculator/damageInputs";
 import { calculateFamilyEffectBonuses, describeFamilyEffect, getNosapkiFamilyEffects, resolveFamilyEffectVariant } from "../calculator/familyEffects";
 import { MONSTERS, SKILLS } from "../calculator/monsters";
 import { getToken, getUser } from "../auth";
@@ -220,7 +220,7 @@ export default function DamageCalculator() {
     if (type === 96 && sub === 0) return { item, effect, bucket: "Fée", value: first / 4, text: `Élément de la fée équipée +${first / 4}`, applied: true };
     if (type === 102 && sub === 2) return { item, effect, bucket: "SP élément", value: first / 4, text: `Points de compétence SP élément +${first / 4}`, applied: true };
     if (type === 4 && sub === 4) return { item, effect, bucket: "Dégâts monstres", value: first / 4, text: `Dégâts contre les monstres +${first / 4} %`, applied: true };
-    if (type === 96 && sub === 1) { const referenceWings = Number(item.vnum) === 4531; return { item, effect, bucket: "Proc fée", chance: referenceWings ? 20 : first / 4, value: referenceWings ? 100 : second / 4, text: `${referenceWings ? 20 : first / 4} % de chance : élément de la fée +${referenceWings ? 100 : second / 4}`, applied: true }; }
+    if (type === 96 && sub === 1) { const proc = readDamageProc(effect); return { item, effect, bucket: "Proc fée", chance: proc.chance, value: proc.value, text: `${proc.chance} % de chance : élément de la fée +${proc.value}`, applied: true }; }
     if (type === 5 && sub === 0) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Probabilité critique +${Math.abs(first)} %`, applied: true };
     if (type === 5 && sub === 1) return { item, effect, bucket: "Critique", value: Math.abs(first), text: `Dégâts critiques +${Math.abs(first)} %`, applied: true };
     if (type === 4 && sub === 0) return { item, effect, bucket: "Précision", value: first / 4, text: `Précision de toutes les attaques +${first / 4}`, applied: false, decoded: true };
@@ -305,6 +305,7 @@ export default function DamageCalculator() {
   const weaponOptionSpAttack = optionValue(runeDraft, runic, "spAttack");
   const weaponOptionSpElement = optionValue(runeDraft, runic, "spElement");
   const monsterCriticalReduction = (currentMonster?.monster_cards || []).filter((effect) => Number(effect.BCardVNUM) === 5 && Number(effect.BCardSub) === 4).reduce((total, effect) => total + Math.abs(Number(effect.EffectVal1 || 0)) / 4, 0);
+  const targetDamageReduction = targetDamageReductionProc(currentMonster?.monster_cards || [], stats.attackType);
   const spBonuses = specialistPointBonuses({
     attack: Number(spDraft?.attack || 0) + weaponOptionSpAttack,
     element: Number(spDraft?.element || 0) + weaponOptionSpElement,
@@ -337,12 +338,10 @@ export default function DamageCalculator() {
     resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + itemResistanceReduction + familyEffectBonuses.resistanceReduction,
     attackPowerProcChance: itemAttackProcChance + familyEffectBonuses.attackPowerProcChance,
     attackPowerProcValue: itemAttackProcValue + familyEffectBonuses.attackPowerProcValue,
-    physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
-    physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
-    // La configuration NosApki de référence applique le bonus 953 amélioré
-    // (20 % / +100) aux ailes tropicales portées par DrokenA.
-    fairyProcChance: String(equipment.wings) === "4531" ? 20 : itemFairyProcChance,
-    fairyProcValue: String(equipment.wings) === "4531" ? 100 : itemFairyProcValue,
+    physicalReductionChance: targetDamageReduction.chance,
+    physicalReductionValue: targetDamageReduction.value,
+    fairyProcChance: itemFairyProcChance,
+    fairyProcValue: itemFairyProcValue,
   };
   const result = useMemo(() => calculateDamage(calculationInput), [calculationInput]);
   const damageScenarios = useMemo(() => calculateDamageScenarios(calculationInput), [calculationInput]);
