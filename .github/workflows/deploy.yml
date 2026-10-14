@@ -1,5 +1,5 @@
-# Deployment trigger: staged PvE formula and measured base attack
-name: Test, build and deploy frontend
+# Build every production image before any deployment.
+name: Validate and deploy PandoraHearts Family
 
 # Production deploys are serialized and always back up PostgreSQL first.
 
@@ -35,9 +35,11 @@ jobs:
         run: npm test
       - name: Build frontend
         working-directory: frontend
-        env:
-          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: npm run build
+      - name: Build frontend production image
+        run: docker build --file frontend/Dockerfile --tag pandorahearts-frontend:ci frontend
+      - name: Build backend production image
+        run: docker build --file backend/Dockerfile --tag pandorahearts-backend:ci backend
   deploy-production:
     # A manual Run workflow must deploy too; the previous push-only guard skipped this job.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

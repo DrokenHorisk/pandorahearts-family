@@ -739,16 +739,7 @@ export default function DamageCalculator() {
       }
       setOcrState((old) => ({ ...old, progress: 15, message: "Envoi sécurisé au lecteur OCR…" }));
       const ocrPayload = new FormData(); ocrPayload.append("file", file);
-      let ocrResponse;
-      try {
-        ocrResponse = await fetch("/api/game-data/ocr-character-sheet", { method: "POST", body: ocrPayload });
-      } catch (proxyError) {
-        ocrResponse = null;
-      }
-      if (!ocrResponse || ocrResponse.status >= 500) {
-        const directPayload = new FormData(); directPayload.append("file", file);
-        ocrResponse = await fetch(`${API_BASE}/game-data/ocr-character-sheet`, { method: "POST", body: directPayload });
-      }
+      const ocrResponse = await fetch(`${API_BASE}/game-data/ocr-character-sheet`, { method: "POST", body: ocrPayload });
       if (ocrResponse.status === 413) throw new Error("L’image est trop volumineuse. Taille maximale : 12 Mo.");
       if (!ocrResponse.ok) throw new Error((await ocrResponse.json().catch(() => null))?.detail || "Le lecteur OCR est indisponible.");
       const ocrResult = await ocrResponse.json();
