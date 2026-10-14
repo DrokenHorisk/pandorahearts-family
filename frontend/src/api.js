@@ -1,4 +1,2 @@
-// frontend/src/api.js
-export const API_BASE =
-  (import.meta?.env?.VITE_API_BASE && import.meta.env.VITE_API_BASE) ||
-  "https://api.pandorahearts-family.fr";
+// Use the frontend origin in Docker and development. Nginx/Vite proxy /api to FastAPI.
+export const API_BASE = "/api";

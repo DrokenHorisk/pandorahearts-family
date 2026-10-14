@@ -32,7 +32,7 @@ Le projet est une application full-stack composée de :
 - **Backend** : FastAPI + SQLAlchemy
 - **Base de données** : PostgreSQL
 - **Déploiement local** : Docker Compose
-- **Déploiement Git** : GitHub Pages pour le frontend, Argo CD prévu côté Kubernetes mais actuellement partiellement générique / à adapter
+- **Déploiement de production** : GitHub Actions et un runner auto-hébergé, qui sauvegarde PostgreSQL puis reconstruit et vérifie les conteneurs Docker Compose
 
 L’objectif fonctionnel est de :
 
@@ -388,15 +388,7 @@ L’accès admin est autorisé pour les rôles `admin` et `superadmin`.
 ### 5.4 API frontend
 
 #### `frontend/src/api.js`
-Expose `API_BASE`.
-
-Par défaut :
-
-```js
-https://api.pandorahearts-family.fr
-```
-
-Cela signifie que le frontend appelle directement l’API distante si `VITE_API_BASE` n’est pas défini.
+Expose `API_BASE` sous la forme relative `/api`. En développement, Vite transmet ce chemin au backend local sur le port `8000`. Dans Docker, Nginx transmet le même chemin au service `backend`. Le frontend utilise ainsi la même origine pour l’application et l’API.
 
 ---
 
@@ -563,9 +555,7 @@ Config Nginx SPA :
 
 - `try_files ... /index.html`
 - cache long pour les assets statiques
-- proxy `/api/` vers `https://api.pandorahearts-family.fr/`
-
-⚠️ À noter : le frontend utilise aujourd’hui un `API_BASE` absolu côté JS, donc ce proxy `/api/` n’est pas la mécanique principale réellement exploitée.
+- proxy `/api/` vers le service Docker `backend`
 
 #### `frontend/index.html`
 Point d’entrée HTML avec `#root` et favicon.
@@ -623,18 +613,16 @@ Le `docker-compose.yml` déclare 3 services :
 
 ### 6.2 GitHub Actions
 
-`.github/workflows/deploy.yml` déploie le frontend sur **GitHub Pages** lors d’un push sur `main`.
+`.github/workflows/deploy.yml` valide le build frontend et ses tests sur les pull requests. Après un push sur `main` ou un lancement manuel, le workflow déploie sur le serveur de production via un runner auto-hébergé.
 
 Étapes :
 
-1. checkout
-2. setup Node 20
-3. `npm ci`
-4. `npm run build`
-5. upload artifact Pages
-6. deploy Pages
+1. installer les dépendances avec `npm ci`, exécuter les tests existants du calculateur, compiler le frontend et construire les images Docker frontend et backend ;
+2. sur le runner de production, vérifier la configuration Docker Compose et sauvegarder PostgreSQL ;
+3. récupérer `main`, reconstruire et redémarrer les services ;
+4. vérifier les endpoints de santé et synchroniser les données NosWiki.
 
-Le build lit `VITE_API_BASE` depuis les variables GitHub Actions.
+Le frontend Docker utilise le lockfile `frontend/package-lock.json`. Le frontend et l’API partagent le même chemin `/api` en production comme en développement : le proxy Vite ou Nginx choisit le backend local. En local, copier `.env.example` vers `.env` et remplacer les mots de passe d’exemple.
 
 ---
 
@@ -677,11 +665,9 @@ DB_PASSWORD=
 DATABASE_URL=
 
 JWT_EXPIRE_MINUTES=720
-VITE_API_BASE=https://api.pandorahearts-family.fr
 ```
 
-⚠️ Le fichier `.env.example` n’a pas pu être exploité via l’outil et semble vide ou non significatif.  
-Il serait utile de le compléter proprement.
+Les valeurs de `.env.example` sont réservées au développement local. Elles doivent être remplacées avant toute utilisation sur un serveur.
 
 ---
 
@@ -829,7 +815,7 @@ Quand on me reparle de **PandoraHearts Family**, je dois comprendre immédiateme
   - éditer des points,
   - supprimer un personnage,
   - gérer les dons,
-- le frontend s’appuie sur l’API `https://api.pandorahearts-family.fr` par défaut,
+- le frontend utilise `/api` sur sa propre origine, relayé au backend par Nginx en production et Vite en développement,
 - le dépôt contient encore quelques écarts d’infra ou de migration à clarifier.
 
 ---
