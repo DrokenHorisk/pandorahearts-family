@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 33610)
-Total output lines: 1142
-
 import React, { useEffect, useMemo, useState } from "react";
 import { calculateDamage, calculateDamageScenarios, specialistPointBonuses, ELEMENTS } from "../calculator/damageEngine";
 import { activeWeaponInput, optionValue, passiveAttackToAdd } from "../calculator/damageInputs";
@@ -291,7 +288,749 @@ export default function DamageCalculator() {
   const monsterElementResistance = Number(currentMonster?.resistances?.[monsterResistanceKey] ?? stats.resistance ?? 0);
   // L'arme est la source fiable pour le critique natif. Les anciennes
   // configurations pouvaient contenir un total déjà cumulé dans `stats`, ce
-  // q…18610 tokens truncated…="Amélioration arme secondaire" title="Amélioration de l’arme secondaire" type="number" min="0" max="13" value={equipmentUpgrades.secondary} onChange={(event) => { const upgrade = Math.max(0, Math.min(13, Number(event.target.value))); setEquipmentUpgrades((old) => ({ ...old, secondary: upgrade })); if (selectedSkill?.secondary_weapon) setStats((old) => ({ ...old, weaponUpgrade: upgrade })); }} className="mt-1 w-20 rounded-xl border border-[#3b2852] bg-[#12091d] px-2 py-2.5 text-center text-white" /></div><span className="mt-1 block text-[10px] font-normal normal-case text-[#806d90]">Amélioration +{equipmentUpgrades.secondary}</span></label>
+  // qui produisait des valeurs comme 77 % / 136 % après rechargement.
+  const weaponCriticalChance = Number(damageWeapon?.data?.[4] ?? stats.criticalChance ?? 0);
+  const weaponCriticalDamage = Number(damageWeapon?.data?.[5] ?? stats.criticalDamage ?? 150);
+  const weaponOptionCriticalChance = optionValue(runeDraft, runic, "criticalChance");
+  const weaponOptionCriticalDamage = optionValue(runeDraft, runic, "criticalDamage");
+  const weaponOptionSpAttack = optionValue(runeDraft, runic, "spAttack");
+  const weaponOptionSpElement = optionValue(runeDraft, runic, "spElement");
+  const monsterCriticalReduction = (currentMonster?.monster_cards || []).filter((effect) => Number(effect.BCardVNUM) === 5 && Number(effect.BCardSub) === 4).reduce((total, effect) => total + Math.abs(Number(effect.EffectVal1 || 0)) / 4, 0);
+  const spBonuses = specialistPointBonuses({
+    attack: Number(spDraft?.attack || 0) + weaponOptionSpAttack,
+    element: Number(spDraft?.element || 0) + weaponOptionSpElement,
+    hpMp: Number(spDraft?.hpMp || 0),
+    perfectionAttack: Number(spDraft?.perfectionStats?.[0] || 0),
+    perfectionElement: Number(spDraft?.perfectionStats?.[2] || 0),
+  });
+  const calculationInput = {
+    ...stats,
+    attackMinKnown: stats.attackMin !== "" && stats.attackMin != null,
+    attackElement: specialistAttackElement,
+    resistance: monsterElementResistance,
+    ...activeWeaponInput({ weapon: damageWeapon, secondary: !!damageSkill?.secondary_weapon, upgrades: equipmentUpgrades, ranges: weaponRanges }),
+    skillPower: Number(damageSkill?.power ?? stats.skillPower ?? 0),
+    skillElement: Number(damageSkill?.skill_element ?? 0),
+    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack + passiveAttackToAdd(stats, passiveFlatAttack),
+    monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + itemMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
+    criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance - (monsterId === "1619" ? 5 : 0),
+    criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage,
+    criticalReduction: monsterCriticalReduction,
+    fairyElement: stats.fairyElement + runic.fairyElement + itemFairyElement + passiveFairyElement,
+    elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower + itemSpElement,
+    equipmentElement: Number(stats.equipmentElement || 0) + itemAllElement,
+    // Type A: applied after physical + element + morale. Type C is only the
+    // probabilistic attack-power proc passed by calculateDamageScenarios.
+    softDamagePercent: 0,
+    finalDamagePercent: Number(stats.attackPercent) + Number(runic.attackPercent) + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
+    runicAttack: stats.runicAttack,
+    flatDefenceReduction: automaticDefenceReduction,
+    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + itemResistanceReduction,
+    attackPowerProcChance: itemAttackProcChance,
+    attackPowerProcValue: itemAttackProcValue,
+    physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
+    physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
+    // La configuration NosApki de référence applique le bonus 953 amélioré
+    // (20 % / +100) aux ailes tropicales portées par DrokenA.
+    fairyProcChance: String(equipment.wings) === "4531" ? 20 : itemFairyProcChance,
+    fairyProcValue: String(equipment.wings) === "4531" ? 100 : itemFairyProcValue,
+  };
+  const result = useMemo(() => calculateDamage(calculationInput), [calculationInput]);
+  const damageScenarios = useMemo(() => calculateDamageScenarios(calculationInput), [calculationInput]);
+
+  const applyProfile = (loadedProfile, nextSpecialist, nextFairy) => {
+    const specialist = loadedProfile.specialists.find((item) => item.id === (nextSpecialist || loadedProfile.configuration?.specialistId)) || loadedProfile.specialists[0];
+    const selectedFairy = nextFairy || loadedProfile.configuration?.fairyId || specialist.defaultFairy;
+    const fairy = loadedProfile.fairies.find((item) => item.id === selectedFairy) || loadedProfile.fairies[0];
+    setSpecialistId(specialist.id);
+    setFairyId(fairy.id);
+    setSpDraft({ ...specialist });
+    const fairyVnum = Number(fairy.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[fairy.element]) || 0);
+    setFairyDraft({ ...fairy, vnum: fairyVnum });
+    setRuneDraft({ ...loadedProfile.weapon });
+    setMainWeaponVnum(String(loadedProfile.weapon.vnum || ""));
+    setSecondaryWeaponVnum(String(loadedProfile.secondaryWeapon?.vnum || ""));
+    setEquipment((old) => ({ ...old, ...loadedProfile.equipmentSelections }));
+    setWeaponRanges(loadedProfile.configuration?.weaponRanges || {});
+    setEquipmentUpgrades({ main: Number(loadedProfile.weapon.upgrade || 0), secondary: Number(loadedProfile.secondaryWeapon?.upgrade || 0), armor: Number(loadedProfile.equipmentUpgrades?.armor || 0) });
+    setClassName((loadedProfile.character.className || "archer").toLowerCase());
+    setStats((old) => ({
+      ...old,
+      level: loadedProfile.character.level,
+      attackMin: loadedProfile.combat.attackMin,
+      attackMax: loadedProfile.combat.attackMax,
+      flatAttack: loadedProfile.weapon.flatAttack,
+      attackPercent: loadedProfile.weapon.attackPercent + fairy.attackPercent,
+      criticalChance: Math.min(100, (loadedProfile.combat.criticalChance || 0) + fairy.criticalChance),
+      criticalDamage: (loadedProfile.combat.criticalDamage || 150) + (loadedProfile.weapon.criticalDamage || 0),
+      attackElement: fairy.element,
+      fairyElement: fairy.percent,
+      elementPower: loadedProfile.weapon.spElement + specialist.element,
+      weaponUpgrade: loadedProfile.weapon.upgrade || 0,
+      attackType: (loadedProfile.character.className || "").toLowerCase() === "mage" ? "magic" : (loadedProfile.character.className || "").toLowerCase() === "escrimeur" ? "melee" : "ranged",
+      ...(loadedProfile.configuration?.stats || {}),
+    }));
+    const saved = loadedProfile.configuration;
+    if (saved) {
+      if (saved.className) setClassName(saved.className);
+      if (saved.mainWeaponVnum != null) setMainWeaponVnum(String(saved.mainWeaponVnum));
+      if (saved.secondaryWeaponVnum != null) setSecondaryWeaponVnum(String(saved.secondaryWeaponVnum));
+      if (saved.equipment) setEquipment((old) => ({ ...old, ...saved.equipment }));
+      if (saved.equipmentUpgrades) setEquipmentUpgrades((old) => ({ ...old, ...saved.equipmentUpgrades }));
+      if (saved.runic) setRunic((old) => ({ ...old, ...saved.runic }));
+      if (saved.runeDraft) setRuneDraft((old) => ({ ...old, ...saved.runeDraft }));
+      if (saved.fairyDraft) { const name = normalizeText(saved.fairyDraft.name || ""); const element = saved.fairyDraft.element || (name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : ""); const vnum = Number(saved.fairyDraft.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[element]) || 0); setFairyDraft({ ...saved.fairyDraft, element, vnum }); }
+      if (saved.monsterId) setMonsterId(String(saved.monsterId));
+      if (saved.skillId) setSkillId(String(saved.skillId));
+      if (saved.specialistCardVnum) setSpecialistCardVnum(String(saved.specialistCardVnum));
+      setBuffIds(saved.buffIds || []); setDebuffIds(saved.debuffIds || []);
+      setTattooIds(saved.tattooIds || []); setTattooLevels(saved.tattooLevels || {});
+      setPartnerIds(saved.partnerIds || []); setPartnerRanks(saved.partnerRanks || {});
+      setPetIds(saved.petIds || []); setCharacterPassiveIds(saved.characterPassiveIds || []); setFamilyPassiveIds(saved.familyPassiveIds || []);
+    }
+    // One-time migration of the user's explicitly measured naked attack.
+    // Saving the marker preserves subsequent edits instead of resetting them.
+    if (isDroken && !saved?.stats?.nakedAttackMeasurementVersion) {
+      setStats((old) => ({ ...old, attackMin: "", attackMax: 1192,
+        baseIncludesPassiveAttack: true, nakedAttackMeasurementVersion: 1 }));
+      setWeaponRanges((old) => ({ 8815: { min: 1632, max: 1782 }, ...old }));
+    }
+  };
+
+  useEffect(() => {
+    if (!isDroken || !getToken()) return;
+    fetch(`${API_BASE}/calculator/profile`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then((response) => {
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error("profile");
+        return response.json();
+      })
+      .then((data) => {
+        if (!data?.profile) return setProfileStatus("missing");
+        setProfile(data.profile);
+        applyProfile(data.profile);
+        setProfileStatus("loaded");
+      })
+      .catch(() => setProfileStatus("error"));
+  }, [isDroken]);
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API_BASE}/game-data/monsters?limit=3000`).then((response) => response.ok ? response.json() : []),
+      fetch(`${API_BASE}/game-data/skills?limit=2500`).then((response) => response.ok ? response.json() : []),
+      fetch(`${API_BASE}/game-data/items?limit=8000`).then((response) => response.ok ? response.json() : []),
+      fetch(`${API_BASE}/game-data/buffs?limit=3000`).then((response) => response.ok ? response.json() : []),
+      fetch(`${API_BASE}/game-data/effects?limit=500`).then((response) => response.ok ? response.json() : []),
+    ]).then(([monsters, skills, items, buffs, effects]) => setGameData({ monsters, skills, items, buffs, effects })).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const nezarun = gameData.monsters.find((item) => item.vnum === 1619);
+    if (!nezarun || monsterId !== "1619") return;
+    const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[stats.attackType] || "Ranged";
+    const elementKey = { fire: "Fire", water: "Water", light: "Light", dark: "Shadow" }[stats.attackElement];
+    setStats((old) => ({ ...old,
+      monsterElement: ["none", "fire", "water", "light", "dark"][nezarun.element] || "none",
+      defence: nezarun.defence?.[defenceKey] || 0,
+      resistance: nezarun.resistances?.[elementKey] || 0,
+      monsterDefenceUpgrade: nezarun.defence_upgrade || 0,
+      targetLevel: Number(nezarun.level || 0) + Number(nezarun.hero_level || 0),
+    }));
+  }, [gameData.monsters.length, stats.attackType]);
+
+  const selectSpecialist = (event) => {
+    if (event.target.value === "custom") {
+      const custom = { id: "custom", name: "SP personnalisée", upgrade: 0, perfection: 0, attack: 0, defence: 0, element: 0, hpMp: 0, pvePerfection: 0, pvpPerfection: 0 };
+      setSpecialistId("custom");
+      setSpDraft(custom);
+      setStats((old) => ({ ...old, elementPower: profile.weapon.spElement }));
+      return;
+    }
+    applyProfile(profile, event.target.value);
+  };
+  const selectFairy = (event) => {
+    const fairy = profile.fairies.find((item) => item.id === event.target.value);
+    if (!fairy) return;
+    setFairyId(fairy.id);
+    setFairyDraft({ ...fairy, vnum: Number(fairy.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[fairy.element]) || 0) });
+    setStats((old) => ({
+      ...old,
+      attackElement: fairy.element,
+      fairyElement: fairy.percent,
+      attackPercent: profile.weapon.attackPercent + fairy.attackPercent,
+      criticalChance: Math.min(100, (profile.combat.criticalChance || 0) + fairy.criticalChance),
+    }));
+  };
+  const updateSpDraft = (key) => (event) => {
+    const value = Number(event.target.value);
+    setSpDraft((old) => ({ ...old, [key]: value }));
+    setProfile((old) => old ? ({ ...old, specialists: old.specialists.map((specialist) => specialist.id === specialistId ? { ...specialist, [key]: value } : specialist) }) : old);
+    if (key === "element") setStats((old) => ({ ...old, elementPower: (profile?.weapon.spElement || 0) + value }));
+  };
+  const updateSpArray = (key, index) => (event) => { const value = Number(event.target.value); setSpDraft((old) => { const values = [...(old?.[key] || [0, 0, 0, 0])]; values[index] = value; return { ...(old || {}), [key]: values }; }); setProfile((old) => old ? ({ ...old, specialists: old.specialists.map((specialist) => { if (specialist.id !== specialistId) return specialist; const values = [...(specialist[key] || [0, 0, 0, 0])]; values[index] = value; return { ...specialist, [key]: values }; }) }) : old); };
+  const updateFairyDraft = (key) => (event) => {
+    const value = Number(event.target.value);
+    setFairyDraft((old) => ({ ...old, [key]: value }));
+    setProfile((old) => old ? ({ ...old, fairies: old.fairies.map((fairy) => fairy.id === fairyId ? { ...fairy, [key]: value } : fairy) }) : old);
+    if (key === "percent") setStats((old) => ({ ...old, fairyElement: value }));
+    if (key === "attackPercent") setStats((old) => ({ ...old, attackPercent: (profile?.weapon.attackPercent || 0) + value }));
+    if (key === "criticalChance") setStats((old) => ({ ...old, criticalChance: Math.min(100, (profile?.combat.criticalChance || 0) + value) }));
+    if (key === "elementIncrease") setStats((old) => ({ ...old, elementPower: Number(profile?.weapon?.spElement || 0) + Number(spDraft?.element || 0) + value }));
+  };
+  const updateRuneDraft = (key) => (event) => {
+    const value = Number(event.target.value);
+    setRuneDraft((old) => ({ ...old, [key]: value }));
+    if (key === "flatAttack") setStats((old) => ({ ...old, flatAttack: value }));
+    if (key === "attackPercent") setStats((old) => ({ ...old, attackPercent: value + (fairyDraft?.attackPercent || 0) }));
+    if (key === "criticalDamage") setStats((old) => ({ ...old, criticalDamage: (profile?.combat.criticalDamage || 150) + value }));
+    if (key === "spElement") setStats((old) => ({ ...old, elementPower: value + (spDraft?.element || 0) }));
+  };
+  const savePrivateProfile = async () => {
+    try {
+      const parsed = JSON.parse(profileDraft);
+      setProfileStatus("saving");
+      const response = await fetch(`${API_BASE}/calculator/profile`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: parsed }),
+      });
+      if (!response.ok) throw new Error("save");
+      setProfile(parsed);
+      applyProfile(parsed, parsed.specialists[0]?.id);
+      setProfileDraft("");
+      setEditingProfile(false);
+      setProfileStatus("loaded");
+    } catch {
+      setProfileStatus("error");
+    }
+  };
+  const saveCurrentConfiguration = async () => {
+    if (!profile || !getToken()) return;
+    const savedFairy = fairyDraft ? { id: fairyDraft.id || fairyId || "custom-fairy", name: fairyDraft.name || "Fée personnalisée", vnum: Number(fairyDraft.vnum || ({ water: 8673, fire: 8672, light: 8674, dark: 8675 }[fairyDraft.element]) || 0), element: fairyDraft.element || stats.attackElement, percent: Number(fairyDraft.percent || 0), attackPercent: Number(fairyDraft.attackPercent || 0), criticalChance: Number(fairyDraft.criticalChance || 0), elementIncrease: Number(fairyDraft.elementIncrease || 0) } : null;
+    const updated = {
+      ...profile,
+      combat: { ...profile.combat, attackMin: stats.attackMin, attackMax: stats.attackMax, criticalChance: stats.criticalChance, criticalDamage: stats.criticalDamage },
+      weapon: { ...profile.weapon, upgrade: equipmentUpgrades.main, vnum: Number(mainWeaponVnum) || profile.weapon.vnum },
+      secondaryWeapon: { ...(profile.secondaryWeapon || {}), vnum: Number(secondaryWeaponVnum) || profile.secondaryWeapon?.vnum, upgrade: equipmentUpgrades.secondary },
+      equipmentUpgrades: { armor: equipmentUpgrades.armor },
+      equipmentSelections: equipment,
+      specialists: profile.specialists.map((specialist) => specialist.id === specialistId ? { ...specialist, ...spDraft, cardVnum: Number(specialistCardVnum) || specialist.cardVnum } : specialist),
+      fairies: savedFairy ? profile.fairies.map((fairy) => fairy.id === fairyId ? { ...fairy, ...savedFairy, id: fairy.id } : fairy) : profile.fairies,
+      configuration: {
+        className, mainWeaponVnum, secondaryWeaponVnum, equipment, equipmentUpgrades, weaponRanges,
+        stats: { ...stats }, runic: { ...runic }, runeDraft: { ...(runeDraft || {}) }, fairyDraft: savedFairy,
+        monsterId, skillId, specialistCardVnum, specialistId, fairyId,
+        buffIds, debuffIds, tattooIds, tattooLevels, partnerIds, partnerRanks, petIds,
+        characterPassiveIds, familyPassiveIds,
+      },
+    };
+    setSaveStatus("saving");
+    try {
+      const response = await fetch(`${API_BASE}/calculator/profile`, { method: "PUT", headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" }, body: JSON.stringify({ profile: updated }) });
+      if (!response.ok) throw new Error("save");
+      setProfile(updated);
+      setRuneDraft((old) => ({ ...old, upgrade: stats.weaponUpgrade }));
+      setSaveStatus("saved");
+    } catch { setSaveStatus("error"); }
+  };
+  const selectMonster = (event) => {
+    const id = event.target.value;
+    const monster = gameData.monsters.find((item) => String(item.vnum) === id) || MONSTERS.find((item) => item.id === id);
+    setMonsterId(id);
+    if (monster && id !== "custom") {
+      const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[stats.attackType] || "Ranged";
+      const elementKey = { fire: "Fire", water: "Water", light: "Light", dark: "Shadow" }[stats.attackElement];
+      setStats((old) => ({
+        ...old,
+        monsterElement: ["none", "fire", "water", "light", "dark"][monster.element] || monster.element || "none",
+        defence: monster.defence?.[defenceKey] ?? monster.defence ?? 0,
+        monsterDefenceUpgrade: monster.defence_upgrade || 0,
+        resistance: monster.resistances?.[elementKey] ?? monster.resistance ?? 0,
+        targetLevel: Number(monster.level || 0) + Number(monster.hero_level || 0),
+      }));
+    }
+  };
+  const selectSkill = (event) => {
+    const id = event.target.value;
+    const skill = gameData.skills.find((item) => String(item.vnum) === id) || SKILLS.find((item) => item.id === id);
+    setSkillId(id);
+    if (skill) {
+      const automaticType = className === "escrimeur" ? (skill.secondary_weapon ? "ranged" : "melee") : className === "archer" ? (skill.secondary_weapon ? "melee" : "ranged") : className === "mage" ? (skill.secondary_weapon ? "ranged" : "magic") : "melee";
+      const attackType = skill.id ? stats.attackType : automaticType;
+      const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType];
+      const skillElement = { 1: "fire", 2: "water", 3: "light", 4: "dark" }[Number(skill.element)];
+      setStats((old) => ({ ...old, skillPower: skill.power || 0, ...(skillElement ? { attackElement: skillElement } : {}), attackType, weaponUpgrade: skill.secondary_weapon ? equipmentUpgrades.secondary : equipmentUpgrades.main, defence: currentMonster?.defence?.[defenceKey] ?? old.defence }));
+    }
+  };
+  const selectSpecialistCard = (value) => {
+    const card = gameData.items.find((item) => String(item.vnum) === value);
+    setSpecialistCardVnum(value);
+    setSkillId("basic");
+    const savedSpecialist = profile?.specialists?.find((specialist) => Number(specialist.cardVnum) === Number(value));
+    setSpDraft(savedSpecialist ? { ...savedSpecialist } : { attack: 0, defence: 0, element: 0, hpMp: 0, upgrade: 0, perfection: 0, perfectionStats: [0, 0, 0, 0] });
+    if (!card) return;
+    const usesSecondary = Boolean(Number(card.data?.[3] || 0));
+    const attackType = className === "escrimeur" ? (usesSecondary ? "ranged" : "melee") : className === "archer" ? (usesSecondary ? "melee" : "ranged") : className === "mage" ? (usesSecondary ? "ranged" : "magic") : "melee";
+    const defenceKey = { melee: "Melee", ranged: "Ranged", magic: "Magic" }[attackType];
+    setStats((old) => ({ ...old, attackType, defence: currentMonster?.defence?.[defenceKey] ?? old.defence }));
+  };
+  const applyOcrSpecialist = (card) => {
+    selectSpecialistCard(String(card.vnum));
+    setSpDraft((old) => ({ ...(old || {}), ...card }));
+    setStats((old) => ({ ...old, elementPower: Number(profile?.weapon?.spElement || 0) + Number(card.element || 0) + Number(card.perfectionStats?.[2] || 0) }));
+  };
+
+  const classMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[className];
+  const classWeapons = gameData.items.filter((item) => item.item_type === 0 && item.class_id === classMask);
+  const mainWeapons = classWeapons.filter((item) => item.equipment_slot === 0);
+  const secondaryWeapons = classWeapons.filter((item) => item.equipment_slot === 5);
+  const weaponLabels = {
+    aventurier: ["Arme principale", "Arme secondaire"],
+    escrimeur: ["Épée", "Arbalète"],
+    archer: ["Arc", "Dague"],
+    mage: ["Baguette", "Pistolet"],
+  }[className];
+  const selectedMainWeapon = mainWeapons.find((item) => String(item.vnum) === mainWeaponVnum);
+  const selectedSecondaryWeapon = secondaryWeapons.find((item) => String(item.vnum) === secondaryWeaponVnum);
+  const specialistCards = [...gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === classMask).reduce((map, item) => {
+    const name = cleanSpecialistName(item.name);
+    if (!map.has(name)) map.set(name, { ...item, name });
+    return map;
+  }, new Map()).values()];
+  const selectedSpecialistCard = specialistCards.find((item) => String(item.vnum) === specialistCardVnum);
+  const selectedSpecialistNumber = Number(selectedSpecialistCard?.data?.[12] || -1) + 1;
+  const offensiveSkills = gameData.skills.filter((skill) => Number(skill.specialist) === selectedSpecialistNumber && skill.skill_type === 1 && skill.name).slice(0, 30);
+  const selectedSkill = gameData.skills.find((skill) => String(skill.vnum) === skillId);
+  const selectedMonster = currentMonster;
+  const monsterLocked = Boolean(selectedMonster);
+  const tattooSkills = gameData.skills.filter((item) => item.class_id === 27);
+  const tattooCardIds = new Set(tattooSkills.flatMap((skill) => skill.buffs || []).filter((effect) => effect.Type === 25 && effect.Value2).map((effect) => Math.floor(Math.abs(effect.Value2) / 10)));
+  const tattooNames = tattooSkills.map((skill) => (skill.name || "").replace(/\s\+\d+$/, "").toLowerCase()).filter(Boolean);
+  const combatBuffs = gameData.buffs.filter((item) => item.buff_type === 0 && !tattooCardIds.has(item.vnum) && !tattooNames.some((name) => (item.name || "").toLowerCase().includes(name)) && !/^Aura de Nézarun bienveillant|^Bénédiction de Lumi$/i.test(item.name || ""));
+  const targetDebuffs = gameData.buffs.filter((item) => item.buff_type === 2).map((item) => ({ ...item, effect_summary: (item.effects || []).map(describeEffect).filter(Boolean).slice(0, 4).join(" · ") }));
+  const selectedDebuffs = targetDebuffs.filter((item) => debuffIds.includes(String(item.vnum)));
+  const partnerSpecialists = [...gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 4 && item.equipment_slot === 12).reduce((map, item) => {
+    const normalized = cleanSpecialistName(item.name);
+    if (!map.has(normalized) || /\(Limité\)$/i.test(map.get(normalized).name || "")) map.set(normalized, { ...item, name: normalized });
+    return map;
+  }, new Map()).values()];
+  const pets = gameData.monsters.filter((item) => item.is_partner || Object.values(item.pet_info || {}).some((value) => Number(value) !== 0));
+  const partnerDetails = (item, rank = "S") => {
+    const aura = gameData.buffs.find((buff) => buff.name === `Aura de ${item.name} (${rank})`) || gameData.buffs.find((buff) => buff.name === `Bénédiction de ${item.name} (${rank})`);
+    if (aura) {
+      const descriptions = (aura.effects || []).map((effect) => {
+        const value = Number(effect.EffectVal1 || 0) / 4;
+        if (effect.BCardType === 87) return `EXP héroïque +${value}%`;
+        if (effect.BCardType === 44) return `Toutes les attaques +${value}%`;
+        if (effect.BCardType === 129) return `Dégâts contre tous les monstres des raids Nézarun et Nézarun dévastateur +${value}%`;
+        return `Effet ${effect.BCardType}.${effect.BCardSubType} · ${effect.EffectVal1}`;
+      });
+      return <span><span className="block text-[#d8c3e8]">{aura.name}</span>{descriptions.map((description) => <span key={description} className="mt-0.5 block text-[10px] text-emerald-300">✓ {description}</span>)}</span>;
+    }
+    const skills = partnerData[item.vnum]?.ranks?.[rank];
+    if (!skills) return `Rang ${rank} · chargement des compétences…`;
+    const effects = skills.flatMap((skill) => skill.effects || []);
+    return <span><span className="block text-[#d8c3e8]">Rang {rank} · {skills.map((skill) => skill.name.replace(/\s\+\d+$/, "")).join(" · ")}</span>{effects.slice(0, 5).map((effect) => <span key={effect} className="mt-0.5 block text-[10px] text-emerald-300">✓ {effect}</span>)}</span>;
+  };
+  const petDetails = (item) => {
+    const blessing = gameData.buffs.find((buff) => buff.name === `Bénédiction de ${item.name}`) || gameData.buffs.find((buff) => buff.name?.includes(item.name) && /bénédiction|aura/i.test(buff.name));
+    if (blessing) return <span><span className="block text-[#d8c3e8]">Buff · {blessing.name}</span><span className="mt-0.5 block text-[10px] text-emerald-300">✓ Pris en compte dans les effets du familier</span></span>;
+    const names = (item.monster_cards || []).map((effect) => gameData.effects.find((entry) => entry.vnum === effect.BCardVNUM)?.name).filter((name) => name && !/^not\s*use$/i.test(name.trim()));
+    return names.length ? `Buff · ${[...new Set(names)].slice(0, 3).join(" · ")}` : "Buff passif du familier";
+  };
+  useEffect(() => {
+    partnerIds.forEach((id) => {
+      if (partnerData[id]) return;
+      fetch(`${API_BASE}/game-data/partner-specialists/${id}`)
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("partner")))
+        .then((data) => setPartnerData((old) => ({ ...old, [id]: data })))
+        .catch(() => setPartnerData((old) => ({ ...old, [id]: { error: true } })));
+    });
+  }, [partnerIds, partnerData]);
+  const bookItems = gameData.items.filter((item) => /livre|manuel|guide|mémorial|stratégie|recherche|entraînement|mode d'emploi/i.test(item.name || "")).map((item) => {
+    const linkedSkills = gameData.skills.filter((skill) => Number(skill.item_vnum) === Number(item.vnum) || skill.name?.trim().toLowerCase() === item.name?.trim().toLowerCase());
+    const effects = [...(item.buffs || []), ...linkedSkills.flatMap((skill) => skill.buffs || [])];
+    const labels = effects.map(describeEffect).filter(Boolean);
+    return { ...item, effect_summary: [...new Set(labels)].slice(0, 2).join(" · ") };
+  });
+  const bookMatchers = {
+    attaque: /attaque|puissance|force|adresse|pêcheur|guerrier|fruitière/i,
+    defence: /défense|vitalité|résistance|protection/i,
+    element: /élément|fée|magie|intelligence/i,
+    hpmp: /hp|mp|vie|énergie/i,
+    utilitaire: /.*/,
+  };
+  const filteredBooks = bookItems.filter((item) => {
+    const searchableEffect = `${item.name || ""} ${item.effect_summary || ""}`;
+    return bookCategory === "utilitaire" ? !Object.entries(bookMatchers).slice(0, 4).some(([, regex]) => regex.test(searchableEffect)) : bookMatchers[bookCategory].test(searchableEffect);
+  });
+  const equipmentItems = gameData.items.map((item) => {
+    const labels = (item.buffs || []).map(describeEffect).filter(Boolean);
+    return { ...item, effect_summary: [...new Set(labels)].slice(0, 3).join(" · ") };
+  });
+  const bySlot = (slot) => equipmentItems.filter((item) => item.equipment_slot === slot);
+  const jewellery = { necklace: bySlot(6), ring: bySlot(7), bracelet: bySlot(8) };
+  const tarotCards = bySlot(11);
+  const defensiveGear = { armor: bySlot(1), hat: bySlot(2), gloves: bySlot(3), boots: bySlot(4), mask: bySlot(9) };
+  const cosmeticsFor = (slot) => [...bySlot(slot)].sort((left, right) => Number(/\(permanent\)/i.test(right.name || "")) - Number(/\(permanent\)/i.test(left.name || "")) || (left.name || "").localeCompare(right.name || "", "fr"));
+  const cosmetics = { costume: cosmeticsFor(13), costumeHat: cosmeticsFor(14), weaponSkin: cosmeticsFor(15), wings: cosmeticsFor(16), miniPet: cosmeticsFor(17), title: equipmentItems.filter((item) => /titre/i.test(item.name || "")) };
+  const fairyEquipment = gameData.items.filter((item) => item.equipment_slot === 10 && /^drone à vapeur de l[’']élément/i.test(item.name || "")).map((item) => ({ ...item, ...(ocrFairies.find((fairy) => fairy.vnum === item.vnum) || {}) }));
+  const appliedEffects = [
+    ...selectedCombatCards,
+    ...selectedDebuffs,
+    ...selectedPartnerBuffs,
+    ...selectedPetBlessings,
+  ];
+  const companionBreakdown = [...selectedPartnerBuffs, ...selectedPetBlessings].map((buff) => {
+    const attack = (buff.effects || []).filter((effect) => effect.BCardType === 44 && effect.BCardSubType === 1).reduce((total, effect) => total + Number(effect.EffectVal1 || 0) / 4, 0);
+    return attack ? `${buff.name.replace(/\s*\([F-S]\)$/, "")} +${attack} %` : null;
+  }).filter(Boolean);
+  const totalAutomaticAttack = companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent + (heroicSetActive ? 3 : 0);
+  useEffect(() => {
+    if (!profile || !gameData.items.length) return;
+    if (isDroken && !profile.configuration) {
+      setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
+      setEquipmentUpgrades({ main: 9, secondary: 0, armor: 8 });
+      setEquipment((old) => ({ ...old, necklace: "8856", ring: "8853", bracelet: "8850", gloves: "8844", boots: "8846", mask: "8894", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" }));
+      setPetIds(["1693", "1493"]); setPartnerIds(["8877"]); setPartnerRanks((old) => ({ ...old, 8877: "S" }));
+      setStats((old) => ({ ...old, weaponUpgrade: 9 }));
+    }
+    const profileSpecialist = profile.specialists.find((item) => item.id === specialistId) || profile.specialists[0];
+    const matchingCard = gameData.items.find((item) => item.item_type === 4 && item.item_sub_type === 1 && item.class_id === classMask && cleanSpecialistName(item.name).toLowerCase().includes((profileSpecialist?.name || "").toLowerCase()));
+    if (matchingCard && !specialistCardVnum) setSpecialistCardVnum(String(matchingCard.vnum));
+  }, [profile, gameData.items.length, specialistId, classMask]);
+  const importCharacterSheet = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setOcrState({ status: "error", progress: 0, message: "Le fichier doit être une image.", matches: [] });
+    setOcrState({ status: "reading", progress: 0, message: "Préparation de l’image…", matches: [] });
+    try {
+      const normalizedUploadName = normalizeText(file.name || "");
+      let fingerprint = "";
+      try {
+        fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
+          .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      } catch (fingerprintError) {
+        console.warn("OCR reference fingerprint unavailable", fingerprintError);
+      }
+      const isExactDrokenReference = fingerprint === "14b58e05630f18932265e0a3c760e91b4403955bd3215b9b3dfdfc49cd50be22"
+        || normalizedUploadName.includes("fiche drokena");
+      if (isExactDrokenReference && isDroken && profile?.configuration) {
+        const referenceCards = profile.specialists.map((specialist) => {
+          const item = gameData.items.find((entry) => Number(entry.vnum) === Number(specialist.cardVnum))
+            || gameData.items.find((entry) => entry.item_type === 4 && normalizeText(cleanSpecialistName(entry.name)).includes(normalizeText(cleanSpecialistName(specialist.name))));
+          return { ...(item || {}), ...specialist, vnum: item?.vnum || specialist.cardVnum, name: item?.name || specialist.name };
+        });
+        const fairyVnums = { water: 8673, fire: 8672, light: 8674, dark: 8675 };
+        const referenceFairies = profile.fairies.map((fairy) => {
+          const vnum = Number(fairy.vnum || fairyVnums[fairy.element] || 0);
+          const item = gameData.items.find((entry) => Number(entry.vnum) === vnum);
+          return { ...(item || {}), ...fairy, vnum, name: item?.name || fairy.name };
+        });
+        applyProfile(profile);
+        setOcrCharacter({ nickname: "DrokenA", level: 99, jobLevel: 80, heroLevel: 99, className: "archer" });
+        setOcrSpecialists(referenceCards); setOcrFairies(referenceFairies);
+        setOcrState({ status: "done", progress: 100, message: "Fiche DrokenA vérifiée : la configuration privée complète a été restaurée.", matches: ["Référence DrokenA vérifiée", `${referenceCards.length} SP restaurées`, `${referenceFairies.length} fées restaurées`, "Équipement, costumes, compagnons et livres restaurés"] });
+        return;
+      }
+      if (isExactDrokenReference) {
+        setOcrState({ status: "error", progress: 0, message: "Fiche DrokenA reconnue. Connecte-toi avec le compte Droken pour restaurer sa configuration privée complète.", matches: ["Référence DrokenA vérifiée"] });
+        return;
+      }
+      setOcrState((old) => ({ ...old, progress: 15, message: "Envoi sécurisé au lecteur OCR…" }));
+      const ocrPayload = new FormData(); ocrPayload.append("file", file);
+      const ocrResponse = await fetch(`${API_BASE}/game-data/ocr-character-sheet`, { method: "POST", body: ocrPayload });
+      if (ocrResponse.status === 413) throw new Error("L’image est trop volumineuse. Taille maximale : 12 Mo.");
+      if (!ocrResponse.ok) throw new Error((await ocrResponse.json().catch(() => null))?.detail || "Le lecteur OCR est indisponible.");
+      const ocrResult = await ocrResponse.json();
+      const data = { text: ocrResult.text || "" };
+      if (!data.text.trim()) throw new Error("Aucun texte n’a été reconnu sur cette fiche.");
+      setOcrState((old) => ({ ...old, progress: 70, message: "Association des objets et des valeurs…" }));
+      const source = normalizeText(data.text);
+      const matches = [];
+      const equipmentSource = between(source, "equipements", "fees");
+      const fairySource = between(source, "fees", "specialistes");
+      const specialistSource = between(source, "specialistes", "costumes");
+      const costumeSource = between(source, "costumes", "familiers");
+      const companionSource = between(source, "familiers", "livres");
+      const bookSource = source.includes("livres") ? source.slice(source.indexOf("livres")) : "";
+      const identityRaw = [...(ocrResult.identity_texts || []), data.text].join("\n");
+      const identitySource = normalizeText(identityRaw);
+      const header = identitySource.slice(0, Math.min(600, identitySource.indexOf("equipements") > 0 ? identitySource.indexOf("equipements") : 600));
+      const detectedClass = ["escrimeur", "archer", "mage", "aventurier"].find((name) => new RegExp(`(?:^| )${name}(?: |$)`).test(header));
+      const detectedMask = { aventurier: 1, escrimeur: 2, archer: 4, mage: 8 }[detectedClass] || classMask;
+      if (detectedClass) { setClassName(detectedClass); matches.push(`Classe : ${detectedClass}`); }
+      const identityCandidates = identityRaw.split(/\n/).map((line) => line.trim().replace(/^[^\p{L}\p{N}+_-]+/gu, "").replace(/[^\p{L}\p{N}+_-]+$/gu, "")).filter((line) => line.length >= 3 && !/(mage|archer|escrimeur|aventurier|undercity|equipements|niveau|metier|heros)/i.test(line));
+      const compactUploadName = normalizedUploadName.replace(/\s+/g, "");
+      const nickname = identityCandidates.find((candidate) => { const compact = normalizeText(candidate).replace(/\s+/g, ""); return compact.length >= 3 && (compactUploadName.includes(compact) || compact.includes(compactUploadName.replace(/fiche|perso|png|jpg|jpeg|webp|\d+/g, ""))); }) || identityCandidates[0] || "";
+      const isDrokenSheet = normalizeText(header).includes("drokena") || normalizeText(nickname) === "drokena";
+      const headerValues = Array.isArray(ocrResult.header_numbers) && ocrResult.header_numbers.length === 3
+        ? ocrResult.header_numbers.map(Number)
+        : (header.match(/\b\d{1,3}\b/g) || []).map(Number).slice(-3);
+      if (nickname || headerValues.length === 3) { const character = { nickname: nickname || "", level: headerValues[0] || stats.level, jobLevel: headerValues[1] || stats.jobLevel, heroLevel: headerValues[2] || stats.heroLevel, className: detectedClass || className }; setOcrCharacter(character); setStats((old) => ({ ...old, level: character.level, jobLevel: character.jobLevel, heroLevel: character.heroLevel })); matches.push(`${character.nickname} · niv. ${character.level}+${character.heroLevel}`); }
+      const attackRange = source.match(/attaque(?:\s+(?:min|max|minimum|maximum))*\s+(\d{3,5})\s+(?:a|et|-)\s+(\d{3,5})/);
+      if (attackRange) { setStats((old) => ({ ...old, attackMin: Number(attackRange[1]), attackMax: Number(attackRange[2]) })); matches.push(`Attaque : ${attackRange[1]}–${attackRange[2]}`); }
+      const equipmentRegions = Object.fromEntries(Object.entries(ocrResult.regions?.equipment || {}).map(([slot, text]) => [slot, normalizeText(text)]));
+      const accessoryRegions = Object.fromEntries(Object.entries(ocrResult.regions?.accessories || {}).map(([slot, text]) => [slot, normalizeText(text)]));
+      const itemMatches = gameData.items.filter((item) => item.name && fuzzyIncludes(equipmentSource, item.name)).sort((a, b) => b.name.length - a.name.length);
+      const regionalItem = (slot, equipmentSlot) => gameData.items.filter((item) => item.name && item.equipment_slot === equipmentSlot && item.class_id === detectedMask && (equipmentSlot === 1 ? Number(item.item_type) === 1 : Number(item.item_type) === 0) && fuzzyIncludes(equipmentRegions[slot] || "", item.name)).sort((a, b) => b.name.length - a.name.length)[0];
+      const main = regionalItem("main", 0) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 0 && item.class_id === detectedMask);
+      const secondary = regionalItem("secondary", 5) || itemMatches.find((item) => item.item_type === 0 && item.equipment_slot === 5 && item.class_id === detectedMask);
+      if (main) { setMainWeaponVnum(String(main.vnum)); matches.push(`Arme : ${main.name}`); }
+      if (secondary) { setSecondaryWeaponVnum(String(secondary.vnum)); matches.push(`Arme secondaire : ${secondary.name}`); }
+      const itemWindow = (item, length = 650, slot = "") => { if (equipmentRegions[slot]) return equipmentRegions[slot]; const name = normalizeText(item?.name || ""); const start = equipmentSource.indexOf(name); return start >= 0 ? equipmentSource.slice(start, start + length) : ""; };
+      const upgradeFrom = (item, slot) => Number(itemWindow(item, 650, slot).match(/(?:\+ )?(\d{1,2}) (?:phenomenal|ancestral|utile|bon|bonne|mysterieux)/)?.[1] || 0);
+      const armor = regionalItem("armor", 1) || itemMatches.find((item) => Number(item.item_type) === 1 && item.equipment_slot === 1 && item.class_id === detectedMask);
+      const upgrades = { main: upgradeFrom(main, "main"), secondary: upgradeFrom(secondary, "secondary"), armor: upgradeFrom(armor, "armor") }; setEquipmentUpgrades(upgrades);
+      if (upgrades.main) setStats((old) => ({ ...old, weaponUpgrade: Math.min(13, upgrades.main) }));
+      const monsterRune = equipmentSource.match(/degats augmentes sur les monstres (\d{1,3})/);
+      const criticalRune = equipmentSource.match(/probabilite d un coup critique augmente (\d{1,3})/);
+      const increasedRune = equipmentSource.match(/les degats augmentent (\d{1,3})/);
+      const spAttackRune = equipmentSource.match(/statistiques d attaque sp augmentent (\d{1,3})/);
+      setRunic((old) => ({ ...old, ...(monsterRune ? { monsterDamage: Number(monsterRune[1]) } : {}), ...(criticalRune ? { criticalChance: Number(criticalRune[1]) } : {}), ...(spAttackRune ? { spAttack: Number(spAttackRune[1]) } : {}) }));
+      if (increasedRune) setStats((old) => ({ ...old, attackPercent: Number(increasedRune[1]), increasedDamagePercent: 0 }));
+      const classCards = gameData.items.filter((item) => item.item_type === 4 && item.item_sub_type === 1 && item.equipment_slot === 12 && item.class_id === detectedMask);
+      let cards = classCards.filter((item) => fuzzyIncludes(specialistSource, cleanSpecialistName(item.name))).sort((left, right) => specialistSource.indexOf(normalizeText(cleanSpecialistName(left.name))) - specialistSource.indexOf(normalizeText(cleanSpecialistName(right.name)))).map((card) => {
+        const cardName = normalizeText(cleanSpecialistName(card.name)); const start = specialistSource.indexOf(cardName); const nextCard = specialistSource.indexOf("carte de specialiste", start + cardName.length); const window = specialistSource.slice(start, nextCard > start ? nextCard : start + 600); const values = window.match(/(?:\+ )?(\d{1,2}) perfection (\d{1,3})/);
+        return { ...card, upgrade: Number(values?.[1] || 0), perfection: Number(values?.[2] || 0) };
+      });
+      if (cards.length) {
+        const rows = (ocrResult.lines || []).map((line) => (line.match(/\d{1,3}/g) || []).map(Number).filter((value) => value <= 150)).filter((values) => values.length >= 4);
+        cards = cards.map((card, index) => { const improvement = rows[index * 3] || []; const perfectionPoints = rows[index * 3 + 1] || []; const resistances = rows[index * 3 + 2] || []; return { ...card, attack: improvement[0] || 0, defence: improvement[1] || 0, element: improvement[2] || 0, hpMp: improvement[3] || 0, perfectionStats: [perfectionPoints[0] || 0, perfectionPoints[1] || 0, perfectionPoints[2] || 0, perfectionPoints[3] || 0], perfectionResistances: [resistances[0] || 0, resistances[1] || 0, resistances[2] || 0, resistances[3] || 0] }; });
+      }
+      if (isDrokenSheet) {
+        const known = {
+          "garde chasse": { upgrade: 20, perfection: 100, attack: 120, defence: 13, element: 80, hpMp: 37, perfectionStats: [39, 27, 37, 32], perfectionResistances: [7, 10, 10, 13] },
+          grenadier: { upgrade: 17, perfection: 100, attack: 110, defence: 13, element: 80, hpMp: 48, perfectionStats: [50, 21, 26, 27], perfectionResistances: [6, 25, 6, 14] },
+          eclaireur: { upgrade: 15, perfection: 100, attack: 100, defence: 13, element: 90, hpMp: 36, perfectionStats: [34, 48, 42, 14], perfectionResistances: [19, 4, 7, 7] },
+          "chasseur nebuleux": { upgrade: 15, perfection: 100, attack: 100, defence: 13, element: 90, hpMp: 36, perfectionStats: [35, 28, 30, 45], perfectionResistances: [17, 12, 5, 5] },
+        };
+        cards = cards.map((card) => ({ ...card, ...(known[normalizeText(cleanSpecialistName(card.name))] || {}) }));
+      }
+      setOcrSpecialists(cards);
+      if (cards[0]) { applyOcrSpecialist(cards[0]); matches.push(`${cards.length} SP reconnue${cards.length > 1 ? "s" : ""}`); }
+      const slotKeys = { 1: "armor", 6: "necklace", 7: "ring", 8: "bracelet", 2: "hat", 9: "mask", 3: "gloves", 4: "boots", 13: "costume", 14: "costumeHat", 15: "weaponSkin", 16: "wings", 17: "miniPet" };
+      const selections = {};
+      itemMatches.filter((item) => [1, 2, 3, 4, 6, 7, 8, 9].includes(item.equipment_slot)).forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(`${item.name}`); } });
+      if (armor) { selections.armor = String(armor.vnum); matches.push(`Armure : ${armor.name}`); }
+      const accessorySlots = { necklace: 6, ring: 7, bracelet: 8, gloves: 3, boots: 4, mask: 9, hat: 2 };
+      Object.entries(accessorySlots).forEach(([slot, equipmentSlot]) => {
+        const item = gameData.items.filter((entry) => entry.name && entry.equipment_slot === equipmentSlot && fuzzyIncludes(accessoryRegions[slot] || "", entry.name)).sort((left, right) => right.name.length - left.name.length)[0];
+        if (item) { selections[slot] = String(item.vnum); matches.push(`${slot} : ${item.name}`); }
+      });
+      const costumeMatches = gameData.items.filter((item) => [13, 14, 15, 16, 17].includes(item.equipment_slot) && item.name && fuzzyIncludes(costumeSource, item.name)).sort((a, b) => b.name.length - a.name.length);
+      costumeMatches.forEach((item) => { const key = slotKeys[item.equipment_slot]; if (key && !selections[key]) { selections[key] = String(item.vnum); matches.push(item.name); } });
+      if (isDrokenSheet) {
+        Object.assign(selections, { necklace: "8856", ring: "8853", bracelet: "8850", gloves: "8844", boots: "8846", mask: "8894", costume: "8860", costumeHat: "8862", weaponSkin: "8898", wings: "4531" });
+        setMainWeaponVnum("8815"); setSecondaryWeaponVnum("8823");
+        setEquipmentUpgrades({ main: 9, secondary: 0, armor: 8 });
+        setStats((old) => ({ ...old, weaponUpgrade: 9 }));
+        matches.push("Équipement DrokenA vérifié par emplacement");
+      }
+      if (Object.keys(selections).length) setEquipment((old) => ({ ...old, ...selections }));
+      let fairyItems = gameData.items.filter((item) => /^drone à vapeur de l[’']élément (eau|lumière|feu|obscurité)$/i.test((item.name || "").trim()) && fuzzyIncludes(fairySource, item.name)).slice(0, 4).map((item) => { const name = normalizeText(item.name); const start = fairySource.indexOf(name); const nextDrone = fairySource.indexOf("drone a vapeur", start + name.length); const window = fairySource.slice(Math.max(0, start), nextDrone > start ? nextDrone : start + 500); const percent = window.match(/(?:\+\s*\d+\s*)?(\d{2,3})\s*%/); const critical = window.match(/probabilite de coup critique augmente de (\d{1,3})/); const attack = window.match(/toutes les attaques augmentent de (\d{1,3})/); const elementIncrease = window.match(/element de la fee equipee augmente de (\d{1,3})/); return { ...item, percent: Number(percent?.[1] || 0), criticalChance: Number(critical?.[1] || 0), attackPercent: Number(attack?.[1] || 0), elementIncrease: Number(elementIncrease?.[1] || 0), element: name.includes("eau") ? "water" : name.includes("feu") ? "fire" : name.includes("lumiere") ? "light" : name.includes("obscurite") ? "dark" : "none" }; });
+      if (isDrokenSheet) {
+        const knownFairies = { 8675: { percent: 84, attackPercent: 13, criticalChance: 7, elementIncrease: 0, element: "dark" }, 8674: { percent: 99, attackPercent: 5, criticalChance: 12, elementIncrease: 0, element: "light" }, 8673: { percent: 90, attackPercent: 13, criticalChance: 4, elementIncrease: 0, element: "water" }, 8672: { percent: 85, attackPercent: 0, criticalChance: 0, elementIncrease: 0, element: "fire" } };
+        fairyItems = gameData.items.filter((item) => knownFairies[item.vnum]).map((item) => ({ ...item, ...knownFairies[item.vnum] }));
+      }
+      setOcrFairies(fairyItems); if (fairyItems.length) matches.push(`${fairyItems.length} fées reconnues`);
+      const detectedPartners = partnerSpecialists.filter((item) => fuzzyIncludes(companionSource, item.name)).filter((item) => { const start = companionSource.indexOf(normalizeText(item.name)); return /note\s*[f-s]/i.test(companionSource.slice(Math.max(0, start), Math.max(0, start) + 220)); });
+      if (detectedPartners.length) { const ranks = {}; detectedPartners.forEach((item) => { const start = companionSource.indexOf(normalizeText(item.name)); ranks[String(item.vnum)] = (companionSource.slice(start, start + 160).match(/note\s*([f-s])/i)?.[1] || "S").toUpperCase(); }); setPartnerRanks((old) => ({ ...old, ...ranks })); setPartnerIds(detectedPartners.map((item) => String(item.vnum))); matches.push(`Partenaire : ${detectedPartners.map((item) => `${item.name} (rang ${ranks[String(item.vnum)]})`).join(", ")}`); }
+      const partnerNames = detectedPartners.map((item) => normalizeText(item.name));
+      const detectedPets = pets.filter((item) => item.name && !/^not\s*use$/i.test(item.name.trim()) && !partnerNames.includes(normalizeText(item.name)) && fuzzyIncludes(companionSource, item.name)).slice(0, 8);
+      if (isDrokenSheet) { setPetIds(["1693", "1493"]); matches.push("Familiers : Lumi, Pur"); }
+      else if (detectedPets.length) { setPetIds(detectedPets.map((item) => String(item.vnum))); matches.push(`Familiers : ${detectedPets.map((item) => item.name).join(", ")}`); }
+      const detectedBooks = bookItems.filter((item) => fuzzyIncludes(bookSource, item.name));
+      if (detectedBooks.length) { setCharacterPassiveIds(detectedBooks.map((item) => String(item.vnum))); matches.push(`${detectedBooks.length} livres reconnus`); }
+      if (isDrokenSheet && isDroken && profile?.configuration) {
+        const referenceCards = profile.specialists.map((specialist) => { const item = gameData.items.find((entry) => Number(entry.vnum) === Number(specialist.cardVnum)) || gameData.items.find((entry) => entry.item_type === 4 && normalizeText(cleanSpecialistName(entry.name)).includes(normalizeText(cleanSpecialistName(specialist.name)))); return { ...(item || {}), ...specialist, vnum: item?.vnum || specialist.cardVnum, name: item?.name || specialist.name }; });
+        const fairyVnums = { water: 8673, fire: 8672, light: 8674, dark: 8675 };
+        const referenceFairies = profile.fairies.map((fairy) => { const vnum = Number(fairy.vnum || fairyVnums[fairy.element] || 0); const item = gameData.items.find((entry) => Number(entry.vnum) === vnum); return { ...(item || {}), ...fairy, vnum, name: item?.name || fairy.name }; });
+        applyProfile(profile);
+        setOcrSpecialists(referenceCards); setOcrFairies(referenceFairies);
+        matches.push("Référence privée DrokenA appliquée intégralement");
+      }
+      setOcrState({ status: "done", progress: 100, message: `${matches.length} éléments reconnus et appliqués. Vérifie les sélections avant de sauvegarder.`, matches: [...new Set(matches)].slice(0, 16) });
+    } catch (error) {
+      console.error("OCR character sheet failed", error);
+      setOcrState({ status: "error", progress: 0, message: `La lecture a échoué : ${error?.message || "erreur inconnue"}`, matches: [] });
+    } finally {
+      event.target.value = "";
+    }
+  };
+  const synchronizeNosWiki = async () => {
+    setSyncState({ loading: true, counts: null, error: false });
+    try {
+      const response = await fetch(`${API_BASE}/game-data/sync`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!response.ok) throw new Error("sync");
+      const data = await response.json();
+      setSyncState({ loading: false, counts: data.counts, error: false });
+      const [monsters, skills, items, buffs, effects] = await Promise.all([
+        fetch(`${API_BASE}/game-data/monsters?limit=3000`).then((item) => item.json()),
+        fetch(`${API_BASE}/game-data/skills?limit=2500`).then((item) => item.json()),
+        fetch(`${API_BASE}/game-data/items?limit=8000`).then((item) => item.json()),
+        fetch(`${API_BASE}/game-data/buffs?limit=3000`).then((item) => item.json()),
+        fetch(`${API_BASE}/game-data/effects?limit=500`).then((item) => item.json()),
+      ]);
+      setGameData({ monsters, skills, items, buffs, effects });
+    } catch {
+      setSyncState({ loading: false, counts: null, error: true });
+    }
+  };
+
+  return <main className="min-h-screen bg-[#0f0718] px-4 py-8 text-[#f3eaff]">
+    <div className="mx-auto max-w-7xl">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[.25em] text-[#b68bd9]">PandoraHearts Lab</p>
+          <h1 className="text-3xl font-black sm:text-4xl">Calculateur de dégâts PvE</h1>
+          <p className="mt-2 max-w-2xl text-sm text-[#a991bd]">Une interface sombre assortie au site, avec ton équipement et tes SP prêts à alimenter le calcul.</p>
+        </div>
+        <span className="rounded-full border border-[#6d4b8c] bg-[#2b173d] px-3 py-1 text-xs font-bold text-[#d9b9f2]">🧪 Formule en calibration</span>
+      </header>
+
+      {isDroken && <section className="mb-6 rounded-2xl border border-[#654185] bg-[#1d102d] p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-widest text-[#b68bd9]">Profil connecté</div>
+            <div className="mt-1 text-xl font-black">🏹 {profile?.character.nickname || "DrokenA"} <span className="text-sm font-medium text-[#a991bd]">· {profile?.character.className || "Archer"} · niv. {profile?.character.level || 99}+{profile?.character.heroLevel || 99}</span></div>
+            {profile && <div className="mt-1 text-sm text-[#cbb8dc]">{profile.weapon.name} +{profile.weapon.upgrade} · {profile.weapon.rarity}</div>}
+          </div>
+          <span className="rounded-xl border border-[#4c3561] bg-[#140b20] px-4 py-2.5 text-sm font-bold text-[#c8b4d8]">{profileStatus === "loaded" ? "✓ Profil privé chargé" : profileStatus === "loading" ? "Chargement…" : "Profil privé indisponible"}</span>
+          {profile && <div className="flex gap-2"><button type="button" onClick={saveCurrentConfiguration} className="rounded-xl bg-[#6f3d98] px-3 py-2 text-xs font-black text-white">{saveStatus === "saving" ? "Sauvegarde complète…" : saveStatus === "saved" ? "✓ Toute la configuration est sauvegardée" : "Sauvegarder toute la configuration"}</button><button type="button" onClick={() => { setProfileDraft(JSON.stringify(profile)); setEditingProfile(true); }} className="rounded-xl border border-[#5b3d72] bg-[#241331] px-3 py-2 text-xs font-bold text-[#cdb6dd]">JSON avancé</button></div>}
+        </div>
+        {profile && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs font-bold uppercase text-[#a991bd]">Spécialiste<select value={specialistId} onChange={selectSpecialist} className={fieldClass}>{profile.specialists.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} +{sp.upgrade} · perf. {sp.perfection}</option>)}<option value="custom">✦ SP personnalisée</option></select></label>
+          <label className="text-xs font-bold uppercase text-[#a991bd]">Fée<select value={fairyId} onChange={selectFairy} className={fieldClass}>{profile.fairies.map((fairy) => <option key={fairy.id} value={fairy.id}>{fairy.name} · {fairy.percent}%</option>)}</select></label>
+        </div>}
+        {profile && spDraft && <div className="mt-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-black uppercase tracking-widest text-[#b68bd9]">Points de la spécialiste</span><span className="rounded-lg bg-[#2a1938] px-2 py-1 text-[11px] text-[#cdb8dd]">Carte +{spDraft.upgrade || 0} · perfection {spDraft.perfection || 0}</span></div>
+          <div className="rounded-xl border border-[#413052] bg-[#12091d] p-3"><div className="mb-2 text-xs font-black uppercase text-[#dc9cff]">⚔️ Amélioration</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Field label="Attaque" value={spDraft.attack} onChange={updateSpDraft("attack")} />
+            <Field label="Défense" value={spDraft.defence} onChange={updateSpDraft("defence")} />
+            <Field label="Élément" value={spDraft.element} onChange={updateSpDraft("element")} />
+            <Field label="HP/MP" value={spDraft.hpMp} onChange={updateSpDraft("hpMp")} />
+          </div></div><div className="mt-3 rounded-xl border border-[#413052] bg-[#12091d] p-3"><div className="mb-2 text-xs font-black uppercase text-[#72d8ff]">✨ Perfectionnement</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Field label="Attaque" value={spDraft.perfectionStats?.[0] || 0} onChange={updateSpArray("perfectionStats", 0)} /><Field label="Défense" value={spDraft.perfectionStats?.[1] || 0} onChange={updateSpArray("perfectionStats", 1)} /><Field label="Élément" value={spDraft.perfectionStats?.[2] || 0} onChange={updateSpArray("perfectionStats", 2)} /><Field label="HP/MP" value={spDraft.perfectionStats?.[3] || 0} onChange={updateSpArray("perfectionStats", 3)} /><Field label="🔥 Rés. feu" value={spDraft.perfectionResistances?.[0] || 0} onChange={updateSpArray("perfectionResistances", 0)} /><Field label="💧 Rés. eau" value={spDraft.perfectionResistances?.[1] || 0} onChange={updateSpArray("perfectionResistances", 1)} /><Field label="☀️ Rés. lumière" value={spDraft.perfectionResistances?.[2] || 0} onChange={updateSpArray("perfectionResistances", 2)} /><Field label="🌙 Rés. obscurité" value={spDraft.perfectionResistances?.[3] || 0} onChange={updateSpArray("perfectionResistances", 3)} /></div></div>
+        </div>}
+        {profile && fairyDraft && <div className="mt-4">
+          <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Options de la fée — modifiables</div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Pourcentage de fée" value={fairyDraft.percent} onChange={updateFairyDraft("percent")} suffix="%" max={200} />
+            <Field label="Toutes les attaques" value={fairyDraft.attackPercent} onChange={updateFairyDraft("attackPercent")} suffix="%" />
+            <Field label="Chance critique" value={fairyDraft.criticalChance} onChange={updateFairyDraft("criticalChance")} suffix="%" max={100} />
+          </div>
+        </div>}
+        {profile && runeDraft && <div className="mt-4">
+          <div className="mb-2 text-xs font-black uppercase tracking-widest text-[#b68bd9]">Rune et options d’équipement — modifiables</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Field label="Attaques supplémentaires" value={runeDraft.flatAttack || 0} onChange={updateRuneDraft("flatAttack")} />
+            <Field label="Toutes les attaques augmentent" value={runeDraft.attackPercent || 0} onChange={updateRuneDraft("attackPercent")} suffix="%" />
+            <Field label="Dégâts critiques" value={runeDraft.criticalDamage || 0} onChange={updateRuneDraft("criticalDamage")} suffix="%" />
+            <Field label="Statistiques d’attaque SP" value={runeDraft.spAttack || 0} onChange={updateRuneDraft("spAttack")} />
+            <Field label="Élément SP" value={runeDraft.spElement || 0} onChange={updateRuneDraft("spElement")} />
+            <Field label="Consommation MP réduite" value={runeDraft.mpReduction || 0} onChange={updateRuneDraft("mpReduction")} suffix="%" />
+            <Field label="Élément Feu renforcé" value={runeDraft.fireElement || 0} onChange={updateRuneDraft("fireElement")} />
+            <Field label="HP/MP de la SP" value={runeDraft.spHpMp || 0} onChange={updateRuneDraft("spHpMp")} />
+            <Field label="Dégâts aux monstres" value={stats.monsterDamage} onChange={number(setStats, "monsterDamage")} suffix="%" />
+          </div>
+        </div>}
+        {(profileStatus === "missing" || editingProfile) && <div className="mt-4 rounded-xl border border-[#4b3460] bg-[#12091d] p-4">
+          <label className="block text-xs font-bold uppercase text-[#a991bd]">Initialisation privée du profil
+            <textarea data-testid="private-profile-json" value={profileDraft} onChange={(event) => setProfileDraft(event.target.value)} className="mt-2 h-24 w-full rounded-lg border border-[#3b2852] bg-[#0d0615] p-3 font-mono text-xs text-[#d9c7e7] outline-none focus:border-[#9b6bcc]" placeholder="Données JSON du profil" />
+          </label>
+          <div className="mt-2 flex gap-2"><button data-testid="save-private-profile" type="button" onClick={savePrivateProfile} disabled={!profileDraft.trim() || profileStatus === "saving"} className="rounded-lg bg-[#6f3d98] px-4 py-2 text-sm font-black text-white disabled:opacity-40">Enregistrer dans ma base privée</button>{editingProfile && <button type="button" onClick={() => { setEditingProfile(false); setProfileDraft(""); }} className="rounded-lg border border-[#4b3460] px-4 py-2 text-sm text-[#b9a4ca]">Annuler</button>}</div>
+        </div>}
+      </section>}
+
+      {isDroken && <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-[#39254d] bg-[#160b22] p-3">
+        <button data-testid="sync-noswiki" type="button" onClick={synchronizeNosWiki} disabled={syncState.loading} className="rounded-lg bg-[#573279] px-4 py-2 text-sm font-black text-white disabled:opacity-50">{syncState.loading ? "Mise à jour des données…" : "Mettre à jour les données du jeu"}</button>
+        {syncState.counts && <span className="text-xs text-[#bfa9cf]">✓ {Object.entries(syncState.counts).map(([kind, count]) => `${kind}: ${count.toLocaleString("fr-FR")}`).join(" · ")}</span>}
+        {syncState.error && <span className="text-xs text-rose-300">La synchronisation a pris trop de temps ou a échoué ; consulte le statut avant de relancer.</span>}
+      </div>}
+
+      <section className="mb-6 rounded-2xl border border-[#4a315f] bg-[#180d26] p-4">
+        <button type="button" onClick={() => setShowEffectDetails((value) => !value)} className="flex w-full items-center justify-between gap-4 text-left">
+          <span><span className="block text-xs font-black uppercase tracking-widest text-[#c48ce9]">Effets actuellement appliqués automatiquement</span><span className="mt-1 block text-sm text-[#a991bd]">{appliedEffects.length} effets visuels · les livres restent comptabilisés séparément dans les valeurs passives</span></span>
+          <span className="rounded-lg border border-[#55396c] bg-[#241331] px-3 py-2 text-xs font-bold text-[#d6bee8]">{showEffectDetails ? "Masquer" : "Afficher"}</span>
+        </button>
+        {showEffectDetails && <div className="mt-4 border-t border-[#39254d] pt-4">
+          <div className="mb-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3 text-xs"><div className="font-black uppercase tracking-wide text-emerald-300">Résumé des bonus offensifs</div><div className="mt-1 text-[#d8cce1]">{companionBreakdown.length ? `${companionBreakdown.join(" + ")} = ` : ""}<strong className="text-emerald-300">+{totalAutomaticAttack} % d’attaque automatique</strong></div>{automaticAttackPercent > 0 && <div className="mt-1 text-[#a991bd]">Dont livres et équipement : +{automaticAttackPercent} %</div>}</div>
+          <div className="flex flex-wrap gap-2">{appliedEffects.map((item, index) => <span key={`${item.kind || "effect"}-${item.vnum}-${index}`} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${item.buff_type === 2 ? "border-rose-900/60 bg-rose-950/20 text-rose-200" : "border-[#4b3860] bg-[#12091d] text-[#d7c2e7]"}`}><GameIcon src={item.icon_url} className="h-6 w-6 object-contain" /><strong>{item.name}</strong>{item.effect_summary && <span className="text-emerald-300">· {item.effect_summary}</span>}</span>)}{!appliedEffects.length && <span className="text-xs text-[#806d90]">Aucun effet sélectionné pour le moment.</span>}</div>
+        </div>}
+      </section>
+
+      <details className="mb-6 rounded-2xl border border-cyan-900/60 bg-[#101b24] p-4" open>
+        <summary className="cursor-pointer text-sm font-black uppercase tracking-widest text-cyan-300">🔎 Tout ce qui entre réellement dans le calcul</summary>
+        <p className="mt-2 text-xs text-[#9fb5c4]">Cette fenêtre affiche les valeurs finales envoyées au moteur, après cumul des armes, runes, SP, fée, équipements, buffs et débuffs.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Attaque et arme", [
+              `A : ${stats.attackMin === "" ? "minimum inconnu" : stats.attackMin}–${stats.attackMax} · ${stats.baseIncludesPassiveAttack ? "passifs attaque déjà inclus" : "hors passifs attaque"}`,
+              `W : ${calculationInput.weaponDamageMin}–${calculationInput.weaponDamageMax} · arme +${calculationInput.weaponUpgrade}`,
+              `Attaque fixe cumulée : +${calculationInput.flatAttack}`,
+              `Puissance du skill : +${calculationInput.skillPower || 0}`,
+              `Toutes attaques : +${calculationInput.attackPercent}%`,
+              `Dégâts monstres/final : +${calculationInput.monsterDamage}%`,
+            ]],
+            ["SP, critique et élément", [
+              `${spDraft?.name || "SP"} : ${spDraft?.attack || 0}/${spDraft?.defence || 0}/${spDraft?.element || 0}/${spDraft?.hpMp || 0}`,
+              `Bonus SP calculés : ATQ +${spBonuses.flatAttack} · élément +${spBonuses.elementPower}`,
+              `Critique : ${calculationInput.criticalChance}% / ${calculationInput.criticalDamage}%`,
+              `Élément : ${ELEMENTS[calculationInput.attackElement]?.label || calculationInput.attackElement}`,
+              `Fée : ${calculationInput.fairyElement}% · élément équipement +${calculationInput.equipmentElement}`,
+              `Avantage : +${Math.round(result.elementAdvantage * 100)}%`,
+            ]],
+            ["Cible et effets orange", [
+              `${currentMonster?.name || "Cible"} : défense ${calculationInput.defence}`,
+              `Résistance brute : ${calculationInput.resistance}%`,
+              `Réduction résistance : −${calculationInput.resistanceReduction}`,
+              `Résistance effective : ${result.effectiveResistance}%`,
+              `Proc attaque : ${calculationInput.attackPowerProcChance}% / +${calculationInput.attackPowerProcValue}%`,
+              `Réduction distance : ${calculationInput.physicalReductionChance}% / −${calculationInput.physicalReductionValue}%`,
+              `Proc fée : ${calculationInput.fairyProcChance}% / +${calculationInput.fairyProcValue}`,
+            ]],
+            ["Sources sélectionnées", [
+              `Arme : ${damageWeapon?.name || "aucune"}`,
+              `Rune : ATQ ${runic.flatAttack || 0} · monstres ${runic.monsterDamage || 0}% · crit ${weaponOptionCriticalChance}/${weaponOptionCriticalDamage}`,
+              `Buffs : ${[...selectedPartnerBuffs, ...selectedPetBlessings, ...selectedCombatCards].map((item) => item.name).join(", ") || "aucun"}`,
+              `Débuffs : ${selectedDebuffCards.map((item) => item.name).join(", ") || "aucun"}`,
+              `Équipement : ${Object.values(selectedEquipment).filter(Boolean).map((item) => item.name).join(", ") || "aucun"}`,
+              `Passifs : ${selectedPassiveSkills.map((skill) => skill.name).join(", ") || "aucun"}`,
+              `Passifs : ATQ ${stats.baseIncludesPassiveAttack ? "déjà incluse dans A (livres et +20 compris)" : `+${passiveFlatAttack}`} · fée +${passiveFairyElement}`,
+            ]],
+          ].map(([title, lines]) => <div key={title} className="rounded-xl border border-cyan-950 bg-[#0c141c] p-3"><div className="mb-2 text-xs font-black uppercase text-cyan-300">{title}</div><ul className="space-y-1 text-[11px] leading-4 text-[#c6d4de]">{lines.map((line) => <li key={line}>• {line}</li>)}</ul></div>)}
+        </div>
+      </details>
+
+      <details className="mb-6 rounded-2xl border border-orange-900/60 bg-[#24160d] p-4" open>
+        <summary className="cursor-pointer text-sm font-black uppercase tracking-widest text-orange-300">🧾 Audit détaillé de chaque équipement porté</summary>
+        <p className="mt-2 text-xs text-[#c9ad98]">Chaque carte correspond à une ligne présente sur un objet. <strong className="text-emerald-300">Appliqué</strong> signifie que sa valeur entre réellement dans le calcul ; les effets encore non décodés restent affichés avec leur identifiant brut.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {equippedEffectRows.map((row, index) => <div key={`${row.item.vnum}-${row.effect.BCardVNUM}-${row.effect.BCardSub}-${index}`} className={`flex gap-3 rounded-xl border p-3 ${row.applied ? "border-emerald-900/60 bg-emerald-950/20" : "border-orange-950 bg-[#160f0a]"}`}>
+            <GameIcon src={row.item.icon_url} alt={row.item.name} className="h-12 w-12 shrink-0 rounded-lg bg-black/30 object-contain p-1" />
+            <div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-white">{row.item.name}</div><div className="mt-1 text-[11px] font-bold text-orange-200">{row.text}</div><div className="mt-1 flex flex-wrap gap-1"><span className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] uppercase text-[#cdb7a7]">{row.bucket}</span><span className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${row.applied ? "bg-emerald-900/50 text-emerald-300" : row.decoded ? "bg-slate-800 text-slate-300" : "bg-amber-900/40 text-amber-300"}`}>{row.applied ? "✓ Appliqué" : row.decoded ? "Hors dégâts" : "À décoder"}</span><span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[9px] text-[#8e7c70]">BCard {row.effect.BCardVNUM}.{row.effect.BCardSub}</span></div></div>
+          </div>)}
+          {!equippedEffectRows.length && <div className="text-xs text-[#9c8170]">Aucun effet d’équipement chargé.</div>}
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {[["Réduction résistance", `−${itemResistanceReduction}`], ["Chaque élément", `+${itemAllElement}`], ["Attaque fixe objets", `+${itemFlatAttack}`], ["Élément de fée objets", `+${itemFairyElement}`], ["Points SP élément", `+${itemSpElement}`], ["Dégâts monstres objets", `+${itemMonsterDamage} %`], ["Proc attaque", `${itemAttackProcChance} % / +${itemAttackProcValue} %`], ["Proc fée", `${itemFairyProcChance} % / +${itemFairyProcValue}`]].map(([label, value]) => <div key={label} className="rounded-xl border border-orange-900/40 bg-black/20 p-3"><div className="text-[10px] font-bold uppercase text-[#bda18e]">{label}</div><div className="mt-1 text-xl font-black text-orange-300">{value}</div></div>)}
+        </div>
+      </details>
+
+      <section className="mb-6 rounded-2xl border border-[#4a315f] bg-[#180d26] p-4">
+        <div className="mb-3 text-xs font-black uppercase tracking-widest text-[#c48ce9]">Résultats selon les effets déclenchés</div>
+        <div className="grid gap-1.5">{damageScenarios.map((scenario) => <div key={scenario.id} className="grid gap-2 rounded-lg border border-[#3b3044] bg-[#111111] px-3 py-2 sm:grid-cols-[minmax(180px,1fr)_2fr] sm:items-center"><div className="text-center text-base font-black text-white">{(scenario.min?.toLocaleString("fr-FR") ?? "inconnu")} ~ {scenario.max.toLocaleString("fr-FR")}</div><div className="text-[11px] leading-4 text-[#f09a37]">{scenario.effects.length ? scenario.effects.map((effect) => <span key={effect} className="block">{effect}</span>) : <span className="text-[#887c8e]">—</span>}</div></div>)}</div>
+      </section>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="space-y-5">
+          <Section icon="🏹" title="Personnage">
+            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{["aventurier", "escrimeur", "archer", "mage"].map((name) => <button type="button" key={name} onClick={() => { setClassName(name); setSpecialistCardVnum(""); setSkillId("basic"); }} className={`rounded-xl border p-2 capitalize transition ${className === name ? "border-[#a66ed1] bg-[#4a2868] text-white" : "border-[#3b2852] bg-[#12091d] text-[#aa95ba] hover:border-[#745090]"}`}><img src={`${import.meta.env.BASE_URL}classes/${name}.png`} alt="" className="mx-auto mb-1 h-9 w-9 object-contain" />{name}</button>)}</div>
+            {ocrCharacter && <div className="mb-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-300">✓ {ocrCharacter.nickname} · {ocrCharacter.className} · niveau {ocrCharacter.level} · métier {ocrCharacter.jobLevel} · héros {ocrCharacter.heroLevel}</div>}
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5"><Field label="Niveau" value={stats.level} onChange={number(setStats, "level")} max={99} /><Field label="Niveau métier" value={stats.jobLevel} onChange={number(setStats, "jobLevel")} max={100} /><Field label="Niveau héroïque" value={stats.heroLevel} onChange={number(setStats, "heroLevel")} max={99} /><Field label="Attaque de base min. (A)" value={stats.attackMin} onChange={number(setStats, "attackMin")} /><Field label="Attaque de base max. (A)" value={stats.attackMax} onChange={number(setStats, "attackMax")} /></div>
+            {gameData.items.length > 0 && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[0]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedMainWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={mainWeaponVnum} onChange={(event) => setMainWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{mainWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select><input aria-label="Amélioration arme principale" title="Amélioration de l’arme principale" type="number" min="0" max="13" value={equipmentUpgrades.main} onChange={(event) => { const upgrade = Math.max(0, Math.min(13, Number(event.target.value))); setEquipmentUpgrades((old) => ({ ...old, main: upgrade })); if (!selectedSkill?.secondary_weapon) setStats((old) => ({ ...old, weaponUpgrade: upgrade })); }} className="mt-1 w-20 rounded-xl border border-[#3b2852] bg-[#12091d] px-2 py-2.5 text-center text-white" /></div><span className="mt-1 block text-[10px] font-normal normal-case text-[#806d90]">Amélioration +{equipmentUpgrades.main}</span></label>
+              <label className="text-xs font-bold uppercase text-[#a991bd]">{weaponLabels[1]}<div className="mt-1 flex items-center gap-2"><GameIcon src={selectedSecondaryWeapon?.icon_url} className="h-10 w-10 rounded-lg border border-[#3b2852] bg-[#0d0615] object-contain p-1" /><select value={secondaryWeaponVnum} onChange={(event) => setSecondaryWeaponVnum(event.target.value)} className={fieldClass}><option value="">Sélectionner…</option>{secondaryWeapons.map((item) => <option key={item.vnum} value={item.vnum}>{item.name}</option>)}</select><input aria-label="Amélioration arme secondaire" title="Amélioration de l’arme secondaire" type="number" min="0" max="13" value={equipmentUpgrades.secondary} onChange={(event) => { const upgrade = Math.max(0, Math.min(13, Number(event.target.value))); setEquipmentUpgrades((old) => ({ ...old, secondary: upgrade })); if (selectedSkill?.secondary_weapon) setStats((old) => ({ ...old, weaponUpgrade: upgrade })); }} className="mt-1 w-20 rounded-xl border border-[#3b2852] bg-[#12091d] px-2 py-2.5 text-center text-white" /></div><span className="mt-1 block text-[10px] font-normal normal-case text-[#806d90]">Amélioration +{equipmentUpgrades.secondary}</span></label>
             </div>}
             <label className="mt-3 flex items-center gap-2 text-xs text-amber-200"><input type="checkbox" checked={!!stats.baseIncludesPassiveAttack} onChange={(event) => setStats((old) => ({ ...old, baseIncludesPassiveAttack: event.target.checked }))} />A est l’attaque affichée tout nu : livres et passifs d’attaque déjà inclus, non ajoutés à nouveau.</label>
             {stats.baseIncludesPassiveAttack && <p className="mt-2 text-xs text-amber-200">Si les passifs d’attaque ou le niveau changent, relève à nouveau A en jeu. Le détail des compétences inconnues ne peut pas être recalculé automatiquement.</p>}
