@@ -118,8 +118,8 @@ test("Nézarun procs produce all sixteen combinations", () => {
     attackMin: 1000, attackMax: 1100, defence: 500, fairyElement: 80,
     attackElement: "light", monsterElement: "dark", criticalChance: 37, criticalDamage: 546,
     attackPowerProcChance: 45, attackPowerProcValue: 155,
-    physicalReductionChance: 95, physicalReductionValue: 75,
-    fairyProcChance: 20, fairyProcValue: 100,
+    physicalReductionChance: 66, physicalReductionValue: 75,
+    fairyProcChance: 20, fairyProcValue: 320,
   });
   assert.equal(scenarios.length, 16);
   assert.equal(scenarios[0].effects.length, 0);
