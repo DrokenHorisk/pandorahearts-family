@@ -20,9 +20,6 @@ export const NOSAPKI_SCREENSHOT_REFERENCE = {
   "critical-attack-reduced-fairy": [322773, 329056],
 };
 
-// Retain the old export name for any downstream consumers.
-export const DROKENA_NEZARUN_REFERENCE = NOSAPKI_SCREENSHOT_REFERENCE;
-
 // Comparison only: never replace calculated results with the reference.
 export function compareNosapkiReference(scenarios) {
   return Object.entries(NOSAPKI_SCREENSHOT_REFERENCE).map(([id, expected]) => {
