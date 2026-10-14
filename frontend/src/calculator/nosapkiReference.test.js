@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compareNosapkiReference, DROKENA_NEZARUN_REFERENCE } from "./nosapkiReference.js";
+import { compareNosapkiReference, NOSAPKI_SCREENSHOT_REFERENCE } from "./nosapkiReference.js";
 
 test("reference reports mismatches without overwriting damage", () => {
-  const scenarios = Object.keys(DROKENA_NEZARUN_REFERENCE).map((id) => Object.freeze({ id, min: 1, max: 2 }));
+  const scenarios = Object.keys(NOSAPKI_SCREENSHOT_REFERENCE).map((id) => Object.freeze({ id, min: 1, max: 2 }));
   const comparison = compareNosapkiReference(Object.freeze(scenarios));
   assert.equal(comparison.length, 16);
   assert.ok(comparison.every((row) => !row.matches));
