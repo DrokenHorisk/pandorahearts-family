@@ -55,21 +55,39 @@ test("combined PvE weapon options reactivate element above 100 resistance", () =
   assert.ok(reduced.elementalMin > 0);
 });
 
-test("weapon and defence upgrades keep their own levels", () => {
+test("weapon and armor upgrades apply only their relative level difference", () => {
   const base = { attackMin: 0, attackMax: 0, weaponDamageMin: 1000, weaponDamageMax: 1000, defence: 500, attackElement: "none", monsterElement: "none" };
   const upgraded = calculateDamage({ ...base, weaponUpgrade: 9 });
+  assert.equal(upgraded.upgradeDifference, 9);
   assert.equal(upgraded.upgradePercent, 120);
+  assert.equal(upgraded.defenceUpgradePercent, 0);
   assert.equal(upgraded.upgradeAttack, 1200);
   assert.equal(upgraded.normalMin, 1715);
-  const defended = calculateDamage({ ...base, weaponUpgrade: 9, monsterDefenceUpgrade: 14 });
-  assert.equal(defended.upgradePercent, 120);
-  assert.equal(defended.defenceUpgradePercent, 200);
-  assert.equal(defended.effectiveDefence, 1500);
-  assert.equal(defended.normalMin, 715);
+
+  const defenseAdvantage = calculateDamage({ ...base, weaponUpgrade: 9, monsterDefenceUpgrade: 14 });
+  assert.equal(defenseAdvantage.upgradeDifference, -5);
+  assert.equal(defenseAdvantage.upgradePercent, 0);
+  assert.equal(defenseAdvantage.defenceUpgradePercent, 43);
+  assert.equal(defenseAdvantage.effectiveDefence, 715);
+  assert.equal(defenseAdvantage.normalMin, 300);
+
+  const attackAdvantage = calculateDamage({ ...base, weaponUpgrade: 13, monsterDefenceUpgrade: 9 });
+  assert.equal(attackAdvantage.upgradeDifference, 4);
+  assert.equal(attackAdvantage.upgradePercent, 32);
+  assert.equal(attackAdvantage.defenceUpgradePercent, 0);
+  assert.equal(attackAdvantage.normalMin, 835);
+
+  const equalUpgrades = calculateDamage({ ...base, weaponUpgrade: 10, monsterDefenceUpgrade: 10 });
+  assert.equal(equalUpgrades.upgradePercent, 0);
+  assert.equal(equalUpgrades.defenceUpgradePercent, 0);
 });
 
-test("undocumented upgrade differences are capped at the supplied +200% tier", () => {
-  assert.equal(upgradeDifferenceBonus(13), 200);
+test("Act 10 upgrade differences use the +11 to +13 bonus tiers", () => {
+  assert.equal(upgradeDifferenceBonus(10), 200);
+  assert.equal(upgradeDifferenceBonus(11), 225);
+  assert.equal(upgradeDifferenceBonus(12), 245);
+  assert.equal(upgradeDifferenceBonus(13), 300);
+  assert.equal(upgradeDifferenceBonus(14), 300);
 });
 
 test("critical multiplier only affects N", () => {
