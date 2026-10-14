@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateDamage, calculateDamageScenarios, elementalAdvantage, specialistPointBonuses, upgradeDifferenceBonus } from "./damageEngine.js";
+import { NOSAPKI_EXPORT_1695, normalizeNosapkiExport } from "./nosapkiScenario1695.js";
+import { NOSAPKI_SCREENSHOT_REFERENCE } from "./nosapkiReference.js";
 
 test("applies the PvE floors in the documented order", () => {
   const result = calculateDamage({ attackMin: 1000, attackMax: 1200, defence: 500, attackElement: "none", monsterElement: "none" });
@@ -55,21 +57,39 @@ test("combined PvE weapon options reactivate element above 100 resistance", () =
   assert.ok(reduced.elementalMin > 0);
 });
 
-test("weapon and defence upgrades keep their own levels", () => {
+test("weapon and armor upgrades apply only their relative level difference", () => {
   const base = { attackMin: 0, attackMax: 0, weaponDamageMin: 1000, weaponDamageMax: 1000, defence: 500, attackElement: "none", monsterElement: "none" };
   const upgraded = calculateDamage({ ...base, weaponUpgrade: 9 });
+  assert.equal(upgraded.upgradeDifference, 9);
   assert.equal(upgraded.upgradePercent, 120);
+  assert.equal(upgraded.defenceUpgradePercent, 0);
   assert.equal(upgraded.upgradeAttack, 1200);
   assert.equal(upgraded.normalMin, 1715);
-  const defended = calculateDamage({ ...base, weaponUpgrade: 9, monsterDefenceUpgrade: 14 });
-  assert.equal(defended.upgradePercent, 120);
-  assert.equal(defended.defenceUpgradePercent, 200);
-  assert.equal(defended.effectiveDefence, 1500);
-  assert.equal(defended.normalMin, 715);
+
+  const defenseAdvantage = calculateDamage({ ...base, weaponUpgrade: 9, monsterDefenceUpgrade: 14 });
+  assert.equal(defenseAdvantage.upgradeDifference, -5);
+  assert.equal(defenseAdvantage.upgradePercent, 0);
+  assert.equal(defenseAdvantage.defenceUpgradePercent, 43);
+  assert.equal(defenseAdvantage.effectiveDefence, 715);
+  assert.equal(defenseAdvantage.normalMin, 300);
+
+  const attackAdvantage = calculateDamage({ ...base, weaponUpgrade: 13, monsterDefenceUpgrade: 9 });
+  assert.equal(attackAdvantage.upgradeDifference, 4);
+  assert.equal(attackAdvantage.upgradePercent, 32);
+  assert.equal(attackAdvantage.defenceUpgradePercent, 0);
+  assert.equal(attackAdvantage.normalMin, 835);
+
+  const equalUpgrades = calculateDamage({ ...base, weaponUpgrade: 10, monsterDefenceUpgrade: 10 });
+  assert.equal(equalUpgrades.upgradePercent, 0);
+  assert.equal(equalUpgrades.defenceUpgradePercent, 0);
 });
 
-test("undocumented upgrade differences are capped at the supplied +200% tier", () => {
-  assert.equal(upgradeDifferenceBonus(13), 200);
+test("Act 10 upgrade differences use the +11 to +13 bonus tiers", () => {
+  assert.equal(upgradeDifferenceBonus(10), 200);
+  assert.equal(upgradeDifferenceBonus(11), 225);
+  assert.equal(upgradeDifferenceBonus(12), 245);
+  assert.equal(upgradeDifferenceBonus(13), 300);
+  assert.equal(upgradeDifferenceBonus(14), 300);
 });
 
 test("critical multiplier only affects N", () => {
@@ -88,23 +108,43 @@ test("uses the supplied elemental advantage table", () => {
 
 test("converts SP points into flat, critical and elemental bonuses", () => {
   assert.deepEqual(specialistPointBonuses({ attack: 120, element: 80, hpMp: 37, perfectionAttack: 39, perfectionElement: 37 }), {
-    flatAttack: 1650,
+    flatAttack: 1410,
     criticalChance: 8,
-    criticalDamage: 90,
+    criticalDamage: 70,
     elementPower: 127,
   });
 });
 
-test("Nézarun procs produce all sixteen combinations", () => {
+test("NosApki screenshot mechanics produce all sixteen proc and critical combinations", () => {
   const scenarios = calculateDamageScenarios({
     attackMin: 1000, attackMax: 1100, defence: 500, fairyElement: 80,
     attackElement: "light", monsterElement: "dark", criticalChance: 37, criticalDamage: 546,
     attackPowerProcChance: 45, attackPowerProcValue: 155,
-    physicalReductionChance: 95, physicalReductionValue: 75,
-    fairyProcChance: 20, fairyProcValue: 100,
+    physicalReductionChance: 95, physicalReductionValue: 70,
+    fairyProcChance: 20, fairyProcValue: 320,
   });
   assert.equal(scenarios.length, 16);
+  assert.deepEqual(scenarios.map(({ id }) => id), Object.keys(NOSAPKI_SCREENSHOT_REFERENCE));
   assert.equal(scenarios[0].effects.length, 0);
   assert.match(scenarios[1].effects[0], /37% Probabilité 546% Critique/);
   assert.ok(scenarios.find((scenario) => scenario.attack && scenario.reduction && scenario.fairy && scenario.critical));
+});
+
+test("the supplied NosApki export preserves the 1695 build and family level 8", () => {
+  const normalized = normalizeNosapkiExport(NOSAPKI_EXPORT_1695);
+  assert.equal(normalized.monsterId, "1695");
+  assert.equal(normalized.character.classId, 2);
+  assert.equal(normalized.character.level, 99);
+  assert.equal(normalized.character.distance, 3);
+  assert.deepEqual(normalized.character.passiveSkillIds, ["22", "26", "30", "46", "50", "106", "107", "108", "111", "112", "142", "143", "144", "118", "121", "129", "138", "150", "146"]);
+  assert.deepEqual(normalized.mainWeapon, {
+    id: "8815", upgrade: 12, min: 1632, max: 1782,
+    shellOptions: { 1: "179", 2: "16", 16: "66" }, runeOptions: { 433: "13" },
+  });
+  assert.equal(normalized.characterBuffs.length, 10);
+  assert.equal(normalized.monsterBuffs.length, 6);
+  assert.deepEqual(normalized.familyEffects.find((effect) => effect.slot === 0), { slot: 0, iconId: 2501, level: 8 });
+  assert.equal(normalized.familyEffects.length, 13);
+  assert.deepEqual(normalized.specialist.points, [120, 13, 83, 29]);
+  assert.deepEqual(normalized.specialist.perfection, [39, 27, 37]);
 });

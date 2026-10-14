@@ -265,6 +265,7 @@ def list_entries(
     kind: str,
     q: str = Query("", max_length=100),
     limit: int = Query(200, ge=1, le=8000),
+    vnums: str = Query("", max_length=1000),
     db: Session = Depends(get_db),
 ):
     if kind not in SOURCES:
@@ -274,6 +275,21 @@ def list_entries(
         needle = f"%{q.strip().lower()}%"
         query = query.filter(func.lower(GameDataEntry.name).like(needle))
     rows = query.order_by(GameDataEntry.name, GameDataEntry.vnum).limit(limit).all()
+    if vnums.strip():
+        try:
+            requested_vnums = {int(value) for value in vnums.split(",") if value.strip()}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="vnums must be comma-separated integers") from exc
+        if len(requested_vnums) > 100 or any(value <= 0 for value in requested_vnums):
+            raise HTTPException(status_code=422, detail="vnums may contain up to 100 positive IDs")
+        existing_vnums = {row.vnum for row in rows}
+        if requested_vnums - existing_vnums:
+            rows.extend(
+                db.query(GameDataEntry)
+                .filter(GameDataEntry.kind == kind, GameDataEntry.vnum.in_(requested_vnums - existing_vnums))
+                .order_by(GameDataEntry.name, GameDataEntry.vnum)
+                .all()
+            )
     return [_summary(row) for row in rows]
 
 
