@@ -6,13 +6,13 @@ export const ELEMENTS = {
   water: { label: "Eau", icon: "💧" }, light: { label: "Lumière", icon: "☀️" }, dark: { label: "Obscurité", icon: "🌙" },
 };
 
-// La formule fournie ne documente que les écarts 0 à 10. Au-delà, le palier
-// 10 est conservé afin de ne pas inventer un coefficient.
-export const UPGRADE_DIFFERENCE_BONUS = [0, 10, 15, 22, 32, 43, 54, 65, 90, 120, 200];
+// Bonus du niveau d'amélioration relatif arme/armure. Les paliers +11 à +13
+// correspondent aux valeurs ajoutées avec l'Acte 10.
+export const UPGRADE_DIFFERENCE_BONUS = [0, 10, 15, 22, 32, 43, 54, 65, 90, 120, 200, 225, 245, 300];
 export const WEAPON_UPGRADE_BONUS = UPGRADE_DIFFERENCE_BONUS;
 
 export function upgradeDifferenceBonus(difference) {
-  return UPGRADE_DIFFERENCE_BONUS[Math.min(10, Math.max(0, Math.floor(numeric(difference))))];
+  return UPGRADE_DIFFERENCE_BONUS[Math.min(UPGRADE_DIFFERENCE_BONUS.length - 1, Math.max(0, Math.floor(numeric(difference))))];
 }
 
 export function elementalAdvantage(attacker, target) {
@@ -56,11 +56,11 @@ export function calculateDamage(input) {
   const skillAttack = Math.max(0, numeric(input.skillPower));
   const weaponUpgrade = clamp(input.weaponUpgrade, 0, 13);
   const defenceUpgrade = Math.max(0, numeric(input.monsterDefenceUpgrade));
-  // Les niveaux d'attaque de l'arme et de défense de l'armure sont deux
-  // coefficients indépendants. Une arme +10 conserve donc son +200 % face
-  // à l'armure +14 de Nézarun.
-  const upgradePercent = upgradeDifferenceBonus(weaponUpgrade);
-  const defenceUpgradePercent = upgradeDifferenceBonus(defenceUpgrade);
+  // Weapon and armor upgrades offset each other. Only the side with the
+  // higher upgrade level gets the corresponding difference bonus.
+  const upgradeDifference = weaponUpgrade - defenceUpgrade;
+  const upgradePercent = upgradeDifference > 0 ? upgradeDifferenceBonus(upgradeDifference) : 0;
+  const defenceUpgradePercent = upgradeDifference < 0 ? upgradeDifferenceBonus(-upgradeDifference) : 0;
   // Type C: softcrit only. Type A bonuses are applied later to total damage.
   const softDamage = Math.max(-100, input.softDamagePercent == null ? numeric(input.attackPercent) : numeric(input.softDamagePercent)) / 100;
   const defencePercent = Math.max(-100, numeric(input.defencePercent)) / 100;
@@ -113,7 +113,7 @@ export function calculateDamage(input) {
     normalMin, normalMax, criticalMin, criticalMax, increasedMin, increasedMax, criticalIncreasedMin, criticalIncreasedMax,
     increasedDamageChance: clamp(input.increasedDamageChance, 0, 100), increasedCriticalChance: clamp(input.increasedCriticalChance, 0, 100),
     criticalChance: clamp(input.criticalChance, 0, 100), physicalMin, physicalMax, elementalMin, elementalMax,
-    effectiveDefence, effectiveResistance, weaponUpgrade, monsterDefenceUpgrade: defenceUpgrade, upgradePercent, defenceUpgradePercent,
+    effectiveDefence, effectiveResistance, weaponUpgrade, monsterDefenceUpgrade: defenceUpgrade, upgradeDifference, upgradePercent, defenceUpgradePercent,
     upgradeAttack: Math.floor(((weaponMin + weaponMax) / 2) * upgradePercent / 100), baseDamageMin: baseMin, baseDamageMax: baseMax,
     criticalMultiplier, fairyFraction, elementAdvantage: advantage, morale, finalDamagePercent: finalPercent * 100,
     pveCorrection: correction, confidence: "unverified",
