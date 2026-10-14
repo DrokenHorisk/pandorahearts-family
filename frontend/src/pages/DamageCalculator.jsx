@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { calculateDamage, calculateDamageScenarios, specialistPointBonuses, ELEMENTS } from "../calculator/damageEngine";
 import { activeWeaponInput, optionValue, passiveAttackToAdd } from "../calculator/damageInputs";
+import { calculateFamilyEffectBonuses, describeFamilyEffect, getNosapkiFamilyEffects, resolveFamilyEffectVariant } from "../calculator/familyEffects";
 import { MONSTERS, SKILLS } from "../calculator/monsters";
 import { getToken, getUser } from "../auth";
 import { API_BASE } from "../api";
@@ -116,7 +117,7 @@ function GameIcon({ src, alt = "", className = "h-8 w-8" }) {
   return <img src={src} alt={alt} onError={() => setFailed(true)} className={className} />;
 }
 
-function MultiDataPicker({ label, items, values, onChange, placeholder = "Rechercher…", emptyText = "Aucun effet sélectionné", levels, onLevelChange, levelOptions, getDetails }) {
+function MultiDataPicker({ label, items, values, onChange, placeholder = "Rechercher…", emptyText = "Aucun effet sélectionné", levels, onLevelChange, levelOptions, getLevelOptions, getDetails }) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => items.filter((item) => item.name?.toLowerCase().includes(query.toLowerCase())).slice(0, 120), [items, query]);
   const selected = items.filter((item) => values.includes(String(item.vnum)));
@@ -131,7 +132,7 @@ function MultiDataPicker({ label, items, values, onChange, placeholder = "Recher
       </button>)}
       {!filtered.length && <span className="p-2 text-xs text-[#806d90]">Aucun résultat</span>}
     </div>
-    <div className="mt-2 grid gap-2">{selected.map((item) => { const id = String(item.vnum); const level = levels?.[id] ?? levelOptions?.[0]; return <div key={item.vnum} className="flex items-center gap-2 rounded-xl border border-[#583b70] bg-[#241331] p-2 text-xs font-bold"><GameIcon src={item.icon_url} className="h-9 w-9 object-contain" /><span className="min-w-0 flex-1"><span className="block truncate">{item.name}</span>{getDetails && <span className="mt-0.5 block font-normal text-[#a991bd]">{getDetails(item, level)}</span>}</span>{levelOptions && <select aria-label={`Niveau de ${item.name}`} value={level} onChange={(event) => onLevelChange(id, event.target.value)} className="rounded-lg border border-[#62417c] bg-[#12091d] px-2 py-1.5 text-xs text-white">{levelOptions.map((option) => <option key={option} value={option}>{typeof option === "number" ? `+${option}` : option}</option>)}</select>}<button type="button" onClick={() => toggle(id)} className="px-2 text-lg text-[#9b84ad]">×</button></div>; })}{!selected.length && <span className="text-xs text-[#806d90]">{emptyText}</span>}</div>
+    <div className="mt-2 grid gap-2">{selected.map((item) => { const id = String(item.vnum); const itemLevelOptions = getLevelOptions ? getLevelOptions(item) : levelOptions; const level = levels?.[id] ?? itemLevelOptions?.[0]; return <div key={item.vnum} className="flex items-center gap-2 rounded-xl border border-[#583b70] bg-[#241331] p-2 text-xs font-bold"><GameIcon src={item.icon_url} className="h-9 w-9 object-contain" /><span className="min-w-0 flex-1"><span className="block truncate">{item.name}</span>{getDetails && <span className="mt-0.5 block font-normal text-[#a991bd]">{getDetails(item, level)}</span>}</span>{itemLevelOptions && <select aria-label={`Niveau de ${item.name}`} value={level} onChange={(event) => onLevelChange(id, event.target.value)} className="rounded-lg border border-[#62417c] bg-[#12091d] px-2 py-1.5 text-xs text-white">{itemLevelOptions.map((option) => <option key={option} value={option}>{typeof option === "number" ? (getLevelOptions ? `Niveau ${option}` : `+${option}`) : option}</option>)}</select>}<button type="button" onClick={() => toggle(id)} className="px-2 text-lg text-[#9b84ad]">×</button></div>; })}{!selected.length && <span className="text-xs text-[#806d90]">{emptyText}</span>}</div>
   </div>;
 }
 
@@ -173,6 +174,14 @@ export default function DamageCalculator() {
   const [petIds, setPetIds] = useState([]);
   const [characterPassiveIds, setCharacterPassiveIds] = useState([]);
   const [familyPassiveIds, setFamilyPassiveIds] = useState([]);
+  const [familyPassiveLevels, setFamilyPassiveLevels] = useState({});
+  const familyEffectOptions = useMemo(() => getNosapkiFamilyEffects(gameData.buffs), [gameData.buffs]);
+  const selectedFamilyEffects = familyPassiveIds
+    .map((id) => familyEffectOptions.find((effect) => effect.vnum === String(id)))
+    .filter(Boolean)
+    .map((effect) => resolveFamilyEffectVariant(effect, familyPassiveLevels[effect.vnum] || 1))
+    .filter(Boolean);
+  const familyEffectBonuses = calculateFamilyEffectBonuses(selectedFamilyEffects.flatMap((effect) => effect.effects || []), { monsterId });
   const [showEffectDetails, setShowEffectDetails] = useState(true);
   const [bookCategory, setBookCategory] = useState("attaque");
   const [runic, setRunic] = useState({
@@ -311,23 +320,23 @@ export default function DamageCalculator() {
     ...activeWeaponInput({ weapon: damageWeapon, secondary: !!damageSkill?.secondary_weapon, upgrades: equipmentUpgrades, ranges: weaponRanges }),
     skillPower: Number(damageSkill?.power ?? stats.skillPower ?? 0),
     skillElement: Number(damageSkill?.skill_element ?? 0),
-    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack + passiveAttackToAdd(stats, passiveFlatAttack),
-    monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + itemMonsterDamage + (dragonTarget ? runic.dragonDamage : 0),
-    criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance - (monsterId === "1619" ? 5 : 0),
-    criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage,
+    flatAttack: stats.flatAttack + runic.flatAttack + spBonuses.flatAttack + itemFlatAttack + familyEffectBonuses.flatAttack + passiveAttackToAdd(stats, passiveFlatAttack),
+    monsterDamage: stats.monsterDamage + runic.monsterDamage + raidMonsterDamage + itemMonsterDamage + familyEffectBonuses.monsterDamage + (dragonTarget ? runic.dragonDamage : 0),
+    criticalChance: weaponCriticalChance + Number(fairyDraft?.criticalChance || 0) + weaponOptionCriticalChance + spBonuses.criticalChance + familyEffectBonuses.criticalChance - (monsterId === "1619" ? 5 : 0),
+    criticalDamage: weaponCriticalDamage + weaponOptionCriticalDamage + spBonuses.criticalDamage + familyEffectBonuses.criticalDamage,
     criticalReduction: monsterCriticalReduction,
     fairyElement: stats.fairyElement + runic.fairyElement + itemFairyElement + passiveFairyElement,
-    elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower + itemSpElement,
-    equipmentElement: Number(stats.equipmentElement || 0) + itemAllElement,
+    elementPower: Number(profile?.weapon?.spElement || 0) + Number(fairyDraft?.elementIncrease || 0) + spBonuses.elementPower + itemSpElement + familyEffectBonuses.elementPower,
+    equipmentElement: Number(stats.equipmentElement || 0) + itemAllElement + familyEffectBonuses.equipmentElement,
     // Type A: applied after physical + element + morale. Type C is only the
     // probabilistic attack-power proc passed by calculateDamageScenarios.
     softDamagePercent: 0,
-    finalDamagePercent: Number(stats.attackPercent) + Number(runic.attackPercent) + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent,
+    finalDamagePercent: Number(stats.attackPercent) + Number(runic.attackPercent) + (heroicSetActive ? 3 : 0) + companionAttackPercent + petAttackPercent + combatCardAttackPercent + automaticAttackPercent + familyEffectBonuses.attackPercent,
     runicAttack: stats.runicAttack,
-    flatDefenceReduction: automaticDefenceReduction,
-    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + itemResistanceReduction,
-    attackPowerProcChance: itemAttackProcChance,
-    attackPowerProcValue: itemAttackProcValue,
+    flatDefenceReduction: automaticDefenceReduction + familyEffectBonuses.flatDefenceReduction,
+    resistanceReduction: Number(stats.resistanceReduction || 0) + automaticResistanceReduction + itemResistanceReduction + familyEffectBonuses.resistanceReduction,
+    attackPowerProcChance: itemAttackProcChance + familyEffectBonuses.attackPowerProcChance,
+    attackPowerProcValue: itemAttackProcValue + familyEffectBonuses.attackPowerProcValue,
     physicalReductionChance: monsterId === "1619" && stats.attackType === "ranged" ? 95 : 0,
     physicalReductionValue: monsterId === "1619" && stats.attackType === "ranged" ? 75 : 0,
     // La configuration NosApki de référence applique le bonus 953 amélioré
@@ -386,7 +395,7 @@ export default function DamageCalculator() {
       setBuffIds(saved.buffIds || []); setDebuffIds(saved.debuffIds || []);
       setTattooIds(saved.tattooIds || []); setTattooLevels(saved.tattooLevels || {});
       setPartnerIds(saved.partnerIds || []); setPartnerRanks(saved.partnerRanks || {});
-      setPetIds(saved.petIds || []); setCharacterPassiveIds(saved.characterPassiveIds || []); setFamilyPassiveIds(saved.familyPassiveIds || []);
+      setPetIds(saved.petIds || []); setCharacterPassiveIds(saved.characterPassiveIds || []); setFamilyPassiveIds(saved.familyPassiveIds || []); setFamilyPassiveLevels(saved.familyPassiveLevels || {});
     }
     // One-time migration of the user's explicitly measured naked attack.
     // Saving the marker preserves subsequent edits instead of resetting them.
@@ -423,6 +432,25 @@ export default function DamageCalculator() {
       fetch(`${API_BASE}/game-data/effects?limit=500`).then((response) => response.ok ? response.json() : []),
     ]).then(([monsters, skills, items, buffs, effects]) => setGameData({ monsters, skills, items, buffs, effects })).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!gameData.buffs.length || !familyPassiveIds.length || !familyEffectOptions.length) return;
+    const migrated = familyPassiveIds.map((id) => ({
+      id,
+      effect: familyEffectOptions.find((candidate) => candidate.vnum === String(id)
+        || candidate.variants.some((variant) => String(variant.vnum) === String(id))),
+    }));
+    const nextIds = [...new Set(migrated.map(({ effect }) => effect?.vnum).filter(Boolean))];
+    if (nextIds.length === familyPassiveIds.length && nextIds.every((id, index) => id === familyPassiveIds[index])) return;
+    setFamilyPassiveIds(nextIds);
+    setFamilyPassiveLevels((current) => {
+      const next = { ...current };
+      for (const { id, effect } of migrated) {
+        if (effect && current[id] != null && next[effect.vnum] == null) next[effect.vnum] = current[id];
+      }
+      return next;
+    });
+  }, [familyEffectOptions, familyPassiveIds, gameData.buffs.length]);
 
   useEffect(() => {
     const nezarun = gameData.monsters.find((item) => item.vnum === 1619);
@@ -521,7 +549,7 @@ export default function DamageCalculator() {
         stats: { ...stats }, runic: { ...runic }, runeDraft: { ...(runeDraft || {}) }, fairyDraft: savedFairy,
         monsterId, skillId, specialistCardVnum, specialistId, fairyId,
         buffIds, debuffIds, tattooIds, tattooLevels, partnerIds, partnerRanks, petIds,
-        characterPassiveIds, familyPassiveIds,
+        characterPassiveIds, familyPassiveIds, familyPassiveLevels,
       },
     };
     setSaveStatus("saving");
@@ -886,7 +914,7 @@ export default function DamageCalculator() {
           <h1 className="text-3xl font-black sm:text-4xl">Calculateur de dégâts PvE</h1>
           <p className="mt-2 max-w-2xl text-sm text-[#a991bd]">Une interface sombre assortie au site, avec ton équipement et tes SP prêts à alimenter le calcul.</p>
         </div>
-        <span className="rounded-full border border-[#6d4b8c] bg-[#2b173d] px-3 py-1 text-xs font-bold text-[#d9b9f2]">🧪 Formule en calibration</span>
+        <span className="rounded-full border border-[#6d4b8c] bg-[#2b173d] px-3 py-1 text-xs font-bold text-[#d9b9f2]">🧪 Formule en validation NosApki</span>
       </header>
 
       {isDroken && <section className="mb-6 rounded-2xl border border-[#654185] bg-[#1d102d] p-5">
@@ -1117,11 +1145,27 @@ export default function DamageCalculator() {
             <MultiDataPicker label={`Livres · ${bookCategory}`} items={filteredBooks} values={characterPassiveIds} onChange={setCharacterPassiveIds} placeholder="Rechercher un livre…" />
           </Section>
           <Section icon="🏰" title="Passifs de famille">
-            <MultiDataPicker label="Effets débloqués par la famille" items={gameData.buffs} values={familyPassiveIds} onChange={setFamilyPassiveIds} placeholder="Rechercher un effet de famille…" />
+            <p className="mb-3 text-xs leading-relaxed text-[#9f89b1]">Les effets sont reliés aux icônes Family effects de NosApki puis aux cartes NosWiki. Les niveaux proposés apparaissent lorsque NosWiki fournit leurs variantes.</p>
+            <MultiDataPicker
+              label="Family effects"
+              items={familyEffectOptions}
+              values={familyPassiveIds}
+              onChange={setFamilyPassiveIds}
+              onLevelChange={(id, value) => setFamilyPassiveLevels((old) => ({ ...old, [id]: Number(value) }))}
+              getLevelOptions={(item) => item.levelOptions.length > 1 ? item.levelOptions : undefined}
+              levels={familyPassiveLevels}
+              getDetails={(item, level) => {
+                const selected = resolveFamilyEffectVariant(item, level);
+                const details = (selected?.effects || []).map(describeFamilyEffect).filter(Boolean).join(" · ");
+                return item.levelOptions.length > 1 ? `Niveau ${level}${details ? ` · ${details}` : ""}` : details;
+              }}
+              placeholder="Rechercher un effet familial…"
+              emptyText={gameData.buffs.length ? "Aucun effet Family effects trouvé dans NosWiki." : "Chargement des données NosWiki…"}
+            />
           </Section>
           <Section icon="📊" title="Détail du calcul">
-            <dl className="space-y-3 text-sm">{[["Base après attaque/arme (B)", `${(result.baseDamageMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.baseDamageMax.toLocaleString("fr-FR")}`], ["Bonus de l’arme", `+${result.upgradeAttack.toLocaleString("fr-FR")} (+${result.weaponUpgrade})`], ["Dégâts physiques (N)", `${(result.physicalMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.physicalMax.toLocaleString("fr-FR")}`], ["Défense effective (V)", result.effectiveDefence.toLocaleString("fr-FR")], ["Résistance effective", `${result.effectiveResistance}%`], ["Avantage élémentaire (X)", `+${Math.round(result.elementAdvantage * 100)}%`], ["Part élémentaire (E)", `${(result.elementalMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`], ["Différence niveau/moral (M)", result.morale.toLocaleString("fr-FR")], ["Bonus finaux (G)", `${Number(result.finalDamagePercent.toFixed(4))}%`], ["Correction monstre (K)", result.pveCorrection.toLocaleString("fr-FR")]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#39254d] pb-2"><dt className="text-[#a991bd]">{label}</dt><dd className="font-black">{value}</dd></div>)}</dl>
-            <p className="mt-4 rounded-xl border border-[#705128] bg-[#2c1d13] p-3 text-xs leading-relaxed text-[#f1ca91]">Le moteur est encore en calibration. La prochaine étape branchera les vraies compétences, monstres, buffs et effets, puis l’import automatique de fiche.</p>
+            <dl className="space-y-3 text-sm">{[["Base après attaque/arme (B)", `${(result.baseDamageMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.baseDamageMax.toLocaleString("fr-FR")}`], ["Avantage d’amélioration", result.upgradeDifference === 0 ? "Aucun (niveaux égaux)" : result.upgradeDifference > 0 ? `Arme +${result.upgradeDifference} · attaque +${result.upgradePercent}%` : `Cible +${Math.abs(result.upgradeDifference)} · défense +${result.defenceUpgradePercent}%`], ["Dégâts physiques (N)", `${(result.physicalMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.physicalMax.toLocaleString("fr-FR")}`], ["Défense effective (V)", result.effectiveDefence.toLocaleString("fr-FR")], ["Résistance effective", `${result.effectiveResistance}%`], ["Avantage élémentaire (X)", `+${Math.round(result.elementAdvantage * 100)}%`], ["Part élémentaire (E)", `${(result.elementalMin?.toLocaleString("fr-FR") ?? "inconnu")} ~ ${result.elementalMax.toLocaleString("fr-FR")}`], ["Différence niveau/moral (M)", result.morale.toLocaleString("fr-FR")], ["Bonus finaux (G)", `${Number(result.finalDamagePercent.toFixed(4))}%`], ["Correction monstre (K)", result.pveCorrection.toLocaleString("fr-FR")]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#39254d] pb-2"><dt className="text-[#a991bd]">{label}</dt><dd className="font-black">{value}</dd></div>)}</dl>
+            <p className="mt-4 rounded-xl border border-[#705128] bg-[#2c1d13] p-3 text-xs leading-relaxed text-[#f1ca91]">Les données de monstres, compétences et cartes viennent de NosWiki. La comparaison finale avec NosApki reste à valider à partir d’un même jeu d’entrées complet.</p>
           </Section>
           <Section icon="🖼️" title="Import de fiche">
             <div className="rounded-xl border border-dashed border-[#61437c] bg-[#12091d] p-5 text-center">
